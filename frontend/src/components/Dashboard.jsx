@@ -12,6 +12,7 @@ export default function Dashboard({ backendUrl }) {
   const [certErrorMessage, setCertErrorMessage] = useState('');
   const [unreachableFeeds, setUnreachableFeeds] = useState([]);
   const [successMessage, setSuccessMessage] = useState('');
+  const [expandedAssetId, setExpandedAssetId] = useState(null);
 
   const fetchStats = async () => {
     try {
@@ -125,7 +126,6 @@ export default function Dashboard({ backendUrl }) {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     try {
-      // Nettoyer si format ISO ou RFC
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return dateStr;
       return d.toLocaleDateString('fr-FR', {
@@ -138,6 +138,51 @@ export default function Dashboard({ backendUrl }) {
     } catch (e) {
       return dateStr;
     }
+  };
+
+  // Groupement des alertes par actif pour affichage pliable
+  const getGroupedAlerts = () => {
+    const grouped = {};
+    alerts.forEach(alert => {
+      const assetId = alert.asset_id;
+      if (!grouped[assetId]) {
+        grouped[assetId] = {
+          asset_id: assetId,
+          nom_produit: alert.nom_produit,
+          responsable: alert.responsable,
+          alerts: [],
+          latest_pub_date: alert.pub_date || ''
+        };
+      }
+      grouped[assetId].alerts.push(alert);
+      
+      if (alert.pub_date) {
+        if (!grouped[assetId].latest_pub_date) {
+          grouped[assetId].latest_pub_date = alert.pub_date;
+        } else {
+          const currentLatest = new Date(grouped[assetId].latest_pub_date);
+          const itemDate = new Date(alert.pub_date);
+          if (itemDate > currentLatest) {
+            grouped[assetId].latest_pub_date = alert.pub_date;
+          }
+        }
+      }
+    });
+    
+    const list = Object.values(grouped);
+    // Trier par la date de la dernière publication décroissante
+    list.sort((a, b) => {
+      if (!a.latest_pub_date) return 1;
+      if (!b.latest_pub_date) return -1;
+      return new Date(b.latest_pub_date) - new Date(a.latest_pub_date);
+    });
+    return list;
+  };
+
+  const groupedAlertList = getGroupedAlerts();
+
+  const toggleExpand = (assetId) => {
+    setExpandedAssetId(prev => prev === assetId ? null : assetId);
   };
 
   return (
@@ -219,7 +264,7 @@ export default function Dashboard({ backendUrl }) {
           <div>
             <h3 className="text-lg font-bold text-brand-dark">Actions prioritaires (Alertes RSS)</h3>
             <p className="text-xs text-brand-text/60 mt-0.5">
-              Vulnérabilités et correctifs identifiés via les flux RSS configurés sur vos actifs.
+              Vulnérabilités et correctifs identifiés via les flux RSS configurés sur vos actifs (groupés par actif).
             </p>
           </div>
           <button
@@ -277,7 +322,7 @@ export default function Dashboard({ backendUrl }) {
               <div className="h-6 bg-brand-bg animate-pulse rounded w-2/3"></div>
               <div className="h-6 bg-brand-bg animate-pulse rounded w-1/2"></div>
             </div>
-          ) : alerts.length === 0 ? (
+          ) : groupedAlertList.length === 0 ? (
             <div className="text-center py-12 bg-brand-bg/30 rounded-lg border border-dashed border-brand-border">
               <span className="text-sm text-brand-text/50 font-medium">
                 Aucune alerte en attente. Votre infrastructure est saine et à jour.
@@ -285,55 +330,114 @@ export default function Dashboard({ backendUrl }) {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-brand-border">
+              <table className="min-w-full divide-y divide-brand-border animate-none">
                 <thead>
                   <tr className="bg-brand-bg/50">
+                    <th scope="col" className="w-12 px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider"></th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Actif</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Alerte</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Publié le</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
-                    <th scope="col" className="relative px-4 py-3 text-right">
-                      <span className="sr-only">Actions</span>
-                    </th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Nombre d'alertes</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Dernière publication</th>
+                    <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-brand-border">
-                  {alerts.map((alert) => (
-                    <tr key={alert.id} className="hover:bg-brand-bg/20 transition-colors">
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-brand-dark">
-                        {alert.nom_produit}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-brand-text max-w-md">
-                        <div className="font-medium line-clamp-2">{alert.title}</div>
-                        {alert.link && (
-                          <a
-                            href={alert.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-brand-primary hover:underline mt-1 inline-block"
-                          >
-                            Consulter la source
-                          </a>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-xs text-brand-text/70">
-                        {formatDate(alert.pub_date)}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-bg text-brand-dark border border-brand-border">
-                          {alert.responsable}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-right text-sm">
-                        <button
-                          onClick={() => handleResolveAlert(alert.id)}
-                          className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all"
+                  {groupedAlertList.map((asset) => {
+                    const isExpanded = expandedAssetId === asset.asset_id;
+                    return (
+                      <React.Fragment key={asset.asset_id}>
+                        {/* Group Row */}
+                        <tr 
+                          onClick={() => toggleExpand(asset.asset_id)}
+                          className={`hover:bg-brand-bg/20 cursor-pointer transition-colors ${
+                            isExpanded ? 'bg-brand-bg/10' : ''
+                          }`}
                         >
-                          Valider la mise à jour / Résolu
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                          {/* Chevron */}
+                          <td className="px-4 py-4 text-center">
+                            <div className="flex items-center justify-center">
+                              <svg 
+                                className={`w-4 h-4 text-brand-text/50 transition-transform duration-200 ${
+                                  isExpanded ? 'rotate-90' : ''
+                                }`} 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24" 
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path>
+                              </svg>
+                            </div>
+                          </td>
+                          {/* Actif */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-brand-dark">
+                            {asset.nom_produit}
+                          </td>
+                          {/* Nombre d'alertes */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-brand-text">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-alert/10 text-brand-alert border border-brand-alert/20">
+                              {asset.alerts.length} alerte{asset.alerts.length > 1 ? 's' : ''}
+                            </span>
+                          </td>
+                          {/* Dernière publication */}
+                          <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/70">
+                            {asset.latest_pub_date ? formatDate(asset.latest_pub_date) : 'N/A'}
+                          </td>
+                          {/* Responsable */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-center">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-bg text-brand-dark border border-brand-border">
+                              {asset.responsable}
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* Expandable details */}
+                        {isExpanded && (
+                          <tr className="bg-brand-bg/5">
+                            <td colSpan={5} className="px-8 py-4 border-t border-b border-brand-border/60">
+                              <div className="bg-white rounded-lg border border-brand-border/60 p-5 shadow-sm space-y-4 divide-y divide-brand-border/50">
+                                <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider mb-2">
+                                  Détails des alertes pour {asset.nom_produit}
+                                </span>
+                                {asset.alerts.map((alert) => (
+                                  <div key={alert.id} className="pt-4 first:pt-0 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                    <div className="space-y-1 max-w-2xl">
+                                      <h4 className="text-sm font-semibold text-brand-text leading-snug">
+                                        {alert.title}
+                                      </h4>
+                                      <div className="flex items-center space-x-3 text-xs text-brand-text/50">
+                                        <span>Publié le : {formatDate(alert.pub_date)}</span>
+                                        {alert.link && (
+                                          <>
+                                            <span>&bull;</span>
+                                            <a 
+                                              href={alert.link} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer" 
+                                              className="text-brand-primary hover:underline font-semibold"
+                                            >
+                                              Consulter la source
+                                            </a>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        onClick={() => handleResolveAlert(alert.id)}
+                                        className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer"
+                                      >
+                                        Valider la mise à jour / Résolu
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
