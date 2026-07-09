@@ -498,7 +498,7 @@ def refresh_alerts():
             
             # Vérifier si l'alerte existe déjà
             existing = conn.execute("""
-                SELECT 1 FROM alerts 
+                SELECT id, resolved FROM alerts 
                 WHERE asset_id = ? AND (title = ? OR (link = ? AND link != ''));
             """, (asset_id, title, link)).fetchone()
             
@@ -508,6 +508,11 @@ def refresh_alerts():
                     INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
                     VALUES (?, ?, ?, ?, ?, 0);
                 """, (asset_id, title, description, link, pub_date))
+                new_alerts_count += 1
+            elif existing['resolved'] == 1:
+                # Si l'alerte existe mais était résolue, on la repasse à 0 (non résolue).
+                # Le filtrage dynamique la masquera si la version actuelle est saine.
+                conn.execute("UPDATE alerts SET resolved = 0 WHERE id = ?;", (existing['id'],))
                 new_alerts_count += 1
                 
     conn.commit()
