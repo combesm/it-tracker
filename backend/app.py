@@ -445,13 +445,25 @@ def resolve_asset_alerts(asset_id):
             parsed_versions.sort(key=lambda x: x[0], reverse=True)
             new_version = parsed_versions[0][1]
             
+    # Récupérer l'ancienne version et le nom du produit
+    asset = conn.execute("SELECT nom_produit, version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
+    ancienne_version = asset['version_actuelle'] if asset else 'N/A'
+    nom_produit = asset['nom_produit'] if asset else 'Inconnu'
+
     # Mettre à jour la version de l'actif
     if new_version:
         clean_ver = new_version.strip()
-        # Stocker sans le 'v' initial pour uniformiser l'inventaire si c'est une release
         if clean_ver.lower().startswith('v'):
             clean_ver = clean_ver[1:]
         conn.execute("UPDATE assets SET version_actuelle = ? WHERE id = ?;", (clean_ver, asset_id))
+        
+        # Consigner l'historique si la version a effectivement changé
+        if clean_ver != ancienne_version:
+            now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+            conn.execute("""
+                INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj)
+                VALUES (?, ?, ?, ?, ?);
+            """, (asset_id, nom_produit, ancienne_version, clean_ver, now_str))
         
     conn.execute("UPDATE alerts SET resolved = 1 WHERE asset_id = ? AND resolved = 0;", (asset_id,))
     conn.commit()
@@ -588,6 +600,13 @@ def get_stats():
         'expiring_licences': expiring_soon
     })
 
+@app.route('/api/update-logs', methods=['GET'])
+def get_update_logs():
+    conn = get_db_connection()
+    logs = conn.execute("SELECT * FROM update_logs ORDER BY date_maj DESC, id DESC LIMIT 15;").fetchall()
+    conn.close()
+    return jsonify([dict(l) for l in logs])
+
 # Redirection vers l'application frontend en production
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -602,4 +621,25 @@ if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
         from init_db import init_db as init_db_func
         init_db_func()
+    
+    # Création incrémentale de la table update_logs
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS update_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id INTEGER NOT NULL,
+            nom_produit TEXT NOT NULL,
+            ancienne_version TEXT NOT NULL,
+            nouvelle_version TEXT NOT NULL,
+            date_maj TEXT NOT NULL,
+            FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+        """)
+        conn.commit()
+        conn.close()
+        print("Table update_logs vérifiée/créée avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de la création de la table update_logs : {e}")
+        
     app.run(host='0.0.0.0', port=5000, debug=True)

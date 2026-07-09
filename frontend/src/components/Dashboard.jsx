@@ -14,6 +14,15 @@ export default function Dashboard({ backendUrl }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [expandedAssetId, setExpandedAssetId] = useState(null);
 
+  // States for Resolution Modal
+  const [resolutionModalOpen, setResolutionModalOpen] = useState(false);
+  const [selectedAssetForResolution, setSelectedAssetForResolution] = useState(null);
+  const [resolutionNewVersion, setResolutionNewVersion] = useState('');
+
+  // States for Update Logs
+  const [updateLogs, setUpdateLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+
   const fetchStats = async () => {
     try {
       setLoadingStats(true);
@@ -64,6 +73,21 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
+  const fetchUpdateLogs = async () => {
+    try {
+      setLoadingLogs(true);
+      const res = await fetch(`${backendUrl}/api/update-logs`);
+      if (res.ok) {
+        const data = await res.json();
+        setUpdateLogs(data);
+      }
+    } catch (err) {
+      console.error("Erreur lors du chargement de l'historique:", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
   const handleRefreshAlerts = async () => {
     try {
       setRefreshing(true);
@@ -100,32 +124,7 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
-  const handleResolveAlert = async (alertId) => {
-    try {
-      const res = await fetch(`${backendUrl}/api/alerts/resolve/${alertId}`, { method: 'POST' });
-      if (res.ok) {
-        // Retirer l'alerte localement
-        setAlerts(prev => prev.filter(a => a.id !== alertId));
-        // Rafraîchir les stats
-        fetchStats();
-      } else {
-        alert('Erreur lors de la résolution de l\'alerte.');
-      }
-    } catch (err) {
-      console.error("Erreur de réseau lors de la résolution:", err);
-    }
-  };
-
-  const handleResolveAssetAlerts = async (assetId, newVersion = null) => {
-    let confirmMsg = "Voulez-vous marquer toutes les alertes de cet actif comme résolues suite à sa mise à jour ?";
-    if (newVersion) {
-      const cleanVer = newVersion.toLowerCase().startsWith('v') ? newVersion.substring(1) : newVersion;
-      confirmMsg = `Voulez-vous valider la mise à jour et passer cet actif en version ${cleanVer} ? Cela résoudra toutes les alertes associées.`;
-    }
-    
-    if (!confirm(confirmMsg)) {
-      return;
-    }
+  const handleResolveAssetAlerts = async (assetId, newVersion) => {
     try {
       const res = await fetch(`${backendUrl}/api/alerts/resolve-asset/${assetId}`, {
         method: 'POST',
@@ -137,6 +136,8 @@ export default function Dashboard({ backendUrl }) {
         setAlerts(prev => prev.filter(a => a.asset_id !== assetId));
         // Rafraîchir les stats
         fetchStats();
+        // Rafraîchir le journal d'historique
+        fetchUpdateLogs();
       } else {
         alert('Erreur lors de la validation des alertes de l\'actif.');
       }
@@ -149,6 +150,7 @@ export default function Dashboard({ backendUrl }) {
     fetchStats();
     fetchAlerts();
     fetchCertAlerts();
+    fetchUpdateLogs();
   }, []);
 
   // Formater la date en français propre
@@ -199,7 +201,6 @@ export default function Dashboard({ backendUrl }) {
     });
     
     const list = Object.values(grouped);
-    // Trier par la date de la dernière publication décroissante
     list.sort((a, b) => {
       if (!a.latest_pub_date) return 1;
       if (!b.latest_pub_date) return -1;
@@ -425,7 +426,12 @@ export default function Dashboard({ backendUrl }) {
                               const newVersion = updateAlert ? updateAlert.affected_versions : null;
                               return (
                                 <button
-                                  onClick={() => handleResolveAssetAlerts(asset.asset_id, newVersion)}
+                                  onClick={() => {
+                                    setSelectedAssetForResolution(asset);
+                                    const cleanVer = newVersion ? (newVersion.toLowerCase().startsWith('v') ? newVersion.substring(1) : newVersion) : '';
+                                    setResolutionNewVersion(cleanVer);
+                                    setResolutionModalOpen(true);
+                                  }}
                                   className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-sm"
                                 >
                                   Valider la mise à jour / Résolu
@@ -508,6 +514,69 @@ export default function Dashboard({ backendUrl }) {
         </div>
       </div>
 
+      {/* History Logs Panel: Historique des Mises à jour */}
+      <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm">
+        <div className="px-6 py-5 border-b border-brand-border bg-white flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-brand-dark">Historique des mises à jour</h3>
+            <p className="text-xs text-brand-text/60 mt-0.5">
+              Journal des changements de versions effectués lors de la résolution des alertes.
+            </p>
+          </div>
+          <button
+            onClick={fetchUpdateLogs}
+            disabled={loadingLogs}
+            className="p-1.5 text-brand-text/50 hover:text-brand-primary rounded-lg hover:bg-brand-bg transition-colors cursor-pointer"
+          >
+            <svg className={`w-4 h-4 ${loadingLogs ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17.5M15 11l-3 3-3-3"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div className="p-6">
+          {loadingLogs ? (
+            <div className="space-y-4 py-2">
+              <div className="h-5 bg-brand-bg animate-pulse rounded w-full"></div>
+              <div className="h-5 bg-brand-bg animate-pulse rounded w-11/12"></div>
+            </div>
+          ) : updateLogs.length === 0 ? (
+            <div className="text-center py-8 text-sm text-brand-text/50 font-medium italic">
+              Aucun changement de version consigné pour le moment.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-brand-border">
+                <thead>
+                  <tr className="bg-brand-bg/50">
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Date & Heure</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Actif</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Ancienne Version</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Nouvelle Version</th>
+                    <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-brand-border text-xs">
+                  {updateLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-brand-bg/10 transition-colors">
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-text/60 font-semibold">{log.date_maj}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-bold text-brand-dark">{log.nom_produit}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-text/75">{log.ancienne_version}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-dark font-bold">{log.nouvelle_version}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-successBg text-brand-success border border-brand-success/20">
+                          Mis à jour
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Footer Panel: CERT-FR RSS */}
       <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm">
         <div className="px-6 py-5 border-b border-brand-border bg-white flex items-center justify-between">
@@ -569,6 +638,62 @@ export default function Dashboard({ backendUrl }) {
           )}
         </div>
       </div>
+
+      {/* Modal de Validation de Mise à jour */}
+      {resolutionModalOpen && selectedAssetForResolution && (
+        <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 animate-none">
+          <div className="bg-white rounded-lg border border-brand-border p-6 max-w-md w-full shadow-lg space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-brand-dark">
+                Valider la mise à jour : {selectedAssetForResolution.nom_produit}
+              </h3>
+              <p className="text-xs text-brand-text/60 mt-1">
+                Veuillez confirmer la nouvelle version installée pour cet actif. Cela résoudra toutes les alertes de sécurité en cours et l'enregistrera dans l'historique.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-brand-dark uppercase tracking-wider mb-2">
+                  Nouvelle version de l'actif
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={resolutionNewVersion}
+                  onChange={(e) => setResolutionNewVersion(e.target.value)}
+                  placeholder="Ex: 5.4.7 ou 1.2.0"
+                  className="w-full px-4 py-2.5 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 border-t border-brand-border pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setResolutionModalOpen(false);
+                  setSelectedAssetForResolution(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-brand-text/75 hover:bg-brand-bg rounded-lg transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleResolveAssetAlerts(selectedAssetForResolution.asset_id, resolutionNewVersion);
+                  setResolutionModalOpen(false);
+                  setSelectedAssetForResolution(null);
+                }}
+                className="px-4 py-2 bg-brand-primary text-white text-xs font-semibold rounded-lg hover:bg-brand-primary/95 transition-all shadow-sm"
+              >
+                Valider la mise à jour
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
