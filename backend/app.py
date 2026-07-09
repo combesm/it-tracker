@@ -25,10 +25,11 @@ def analyze_alert(alert):
     version_actuelle = alert.get('version_actuelle') or ''
     
     # Masquer les alertes de pré-release (nightly, beta, alpha, rc, dev...)
-    # si l'utilisateur utilise une version stable
-    prerelease_keywords = ['nightly', 'beta', 'alpha', 'rc', 'dev', 'test', 'preview']
-    has_prerelease_alert = any(kw in title.lower() or kw in description.lower() for kw in prerelease_keywords)
-    has_prerelease_asset = any(kw in version_actuelle.lower() for kw in prerelease_keywords)
+    # si l'utilisateur utilise une version stable (uniquement basé sur le titre de l'alerte pour éviter
+    # les faux positifs avec le texte de description comme "source", "device", etc.)
+    prerelease_pattern = r'\b(nightly|beta|alpha|rc[.-]?\d*|dev|test|preview)\b'
+    has_prerelease_alert = bool(re.search(prerelease_pattern, title.lower()))
+    has_prerelease_asset = bool(re.search(prerelease_pattern, version_actuelle.lower()))
     
     if has_prerelease_alert and not has_prerelease_asset:
         return 'hide', None, None, None
