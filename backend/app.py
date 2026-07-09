@@ -146,15 +146,15 @@ def get_assets():
 @app.route('/api/assets', methods=['POST'])
 def add_asset():
     data = request.json
-    nom_produit = data.get('nom_produit', '').strip()
-    fournisseur = data.get('fournisseur', '').strip() or None
-    version_actuelle = data.get('version_actuelle', '').strip()
-    type_deploiement = data.get('type_deploiement', '')
-    machine_hebergement = data.get('machine_hebergement', '').strip() if type_deploiement == 'Self-hosted' else None
-    type_licence = data.get('type_licence', '') or 'Perpétuelle'
-    date_expiration = data.get('date_expiration', '').strip() if type_licence == 'Limitée' else None
-    url_rss = data.get('url_rss', '').strip() or None
-    responsable = data.get('responsable', '').strip().upper()
+    nom_produit = (data.get('nom_produit') or '').strip()
+    fournisseur = (data.get('fournisseur') or '').strip() or None
+    version_actuelle = (data.get('version_actuelle') or '').strip()
+    type_deploiement = data.get('type_deploiement') or ''
+    machine_hebergement = (data.get('machine_hebergement') or '').strip() if type_deploiement == 'Self-hosted' else None
+    type_licence = data.get('type_licence') or 'Perpétuelle'
+    date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
+    url_rss = (data.get('url_rss') or '').strip() or None
+    responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
     entites = data.get('entites', 'Groupe')
@@ -196,15 +196,15 @@ def add_asset():
 @app.route('/api/assets/<int:asset_id>', methods=['PUT'])
 def update_asset(asset_id):
     data = request.json
-    nom_produit = data.get('nom_produit', '').strip()
-    fournisseur = data.get('fournisseur', '').strip() or None
-    version_actuelle = data.get('version_actuelle', '').strip()
-    type_deploiement = data.get('type_deploiement', '')
-    machine_hebergement = data.get('machine_hebergement', '').strip() if type_deploiement == 'Self-hosted' else None
-    type_licence = data.get('type_licence', '') or 'Perpétuelle'
-    date_expiration = data.get('date_expiration', '').strip() if type_licence == 'Limitée' else None
-    url_rss = data.get('url_rss', '').strip() or None
-    responsable = data.get('responsable', '').strip().upper()
+    nom_produit = (data.get('nom_produit') or '').strip()
+    fournisseur = (data.get('fournisseur') or '').strip() or None
+    version_actuelle = (data.get('version_actuelle') or '').strip()
+    type_deploiement = data.get('type_deploiement') or ''
+    machine_hebergement = (data.get('machine_hebergement') or '').strip() if type_deploiement == 'Self-hosted' else None
+    type_licence = data.get('type_licence') or 'Perpétuelle'
+    date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
+    url_rss = (data.get('url_rss') or '').strip() or None
+    responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
     entites = data.get('entites', 'Groupe')
