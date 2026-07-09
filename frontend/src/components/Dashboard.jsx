@@ -116,12 +116,22 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
-  const handleResolveAssetAlerts = async (assetId) => {
-    if (!confirm("Voulez-vous marquer toutes les alertes de cet actif comme résolues suite à sa mise à jour ?")) {
+  const handleResolveAssetAlerts = async (assetId, newVersion = null) => {
+    let confirmMsg = "Voulez-vous marquer toutes les alertes de cet actif comme résolues suite à sa mise à jour ?";
+    if (newVersion) {
+      const cleanVer = newVersion.toLowerCase().startsWith('v') ? newVersion.substring(1) : newVersion;
+      confirmMsg = `Voulez-vous valider la mise à jour et passer cet actif en version ${cleanVer} ? Cela résoudra toutes les alertes associées.`;
+    }
+    
+    if (!confirm(confirmMsg)) {
       return;
     }
     try {
-      const res = await fetch(`${backendUrl}/api/alerts/resolve-asset/${assetId}`, { method: 'POST' });
+      const res = await fetch(`${backendUrl}/api/alerts/resolve-asset/${assetId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_version: newVersion })
+      });
       if (res.ok) {
         // Retirer toutes les alertes de cet actif de l'état local
         setAlerts(prev => prev.filter(a => a.asset_id !== assetId));
@@ -410,12 +420,18 @@ export default function Dashboard({ backendUrl }) {
                           </td>
                           {/* Actions (stop propagation pour éviter de plier la ligne) */}
                           <td className="px-4 py-4 whitespace-nowrap text-right text-sm" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => handleResolveAssetAlerts(asset.asset_id)}
-                              className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-sm"
-                            >
-                              Valider la mise à jour / Résolu
-                            </button>
+                            {(() => {
+                              const updateAlert = asset.alerts.find(a => a.priority === 'update_available');
+                              const newVersion = updateAlert ? updateAlert.affected_versions : null;
+                              return (
+                                <button
+                                  onClick={() => handleResolveAssetAlerts(asset.asset_id, newVersion)}
+                                  className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-sm"
+                                >
+                                  Valider la mise à jour / Résolu
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
 

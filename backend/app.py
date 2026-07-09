@@ -397,11 +397,70 @@ def resolve_alert(alert_id):
 
 @app.route('/api/alerts/resolve-asset/<int:asset_id>', methods=['POST'])
 def resolve_asset_alerts(asset_id):
+    data = request.json or {}
+    new_version = data.get('new_version')
+    
     conn = get_db_connection()
+    
+    # Si non fourni, tenter de le trouver dans les alertes actives de cet actif
+    if not new_version:
+        alerts = conn.execute("""
+            SELECT al.title, al.description 
+            FROM alerts al 
+            WHERE al.asset_id = ? AND al.resolved = 0;
+        """, (asset_id,)).fetchall()
+        
+        parsed_versions = []
+        for al in alerts:
+            title = al['title'] or ''
+            description = al['description'] or ''
+            full_text = f"{title} \n {description}"
+            
+            # 1. Tenter d'extraire depuis le titre de release (ex: "v0.46.0")
+            title_clean = title.strip()
+            # Supprimer le 'v' initial pour la validation regex
+            title_test = title_clean[1:] if title_clean.lower().startswith('v') else title_clean
+            version_pattern = r'^\d+(?:\.\d+)+(?:-\d+)?$'
+            if re.match(version_pattern, title_test):
+                ver_obj = parse_version_safe(title_clean)
+                if ver_obj:
+                    parsed_versions.append((ver_obj, title_clean))
+            
+            # 2. Tenter d'extraire depuis un pattern de correctif (ex: "fixed in 5.4.7")
+            correction_patterns = [
+                r'(?:upgrade|update|corrige|fix|patch)\s+(?:to|in|à|dans)?\s*(?:version|v)?\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+                r'fixed\s+in\s*(?:version|v)?\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+                r'corrigé\s+dans\s+la\s+version\s*(\d+\.\d+\.\d+(?:\.\d+)?)'
+            ]
+            for pat in correction_patterns:
+                match = re.search(pat, full_text, re.IGNORECASE)
+                if match:
+                    fixed_ver_str = match.group(1)
+                    ver_obj = parse_version_safe(fixed_ver_str)
+                    if ver_obj:
+                        parsed_versions.append((ver_obj, fixed_ver_str))
+                        
+        # Prendre la version sémantique la plus élevée trouvée
+        if parsed_versions:
+            parsed_versions.sort(key=lambda x: x[0], reverse=True)
+            new_version = parsed_versions[0][1]
+            
+    # Mettre à jour la version de l'actif
+    if new_version:
+        clean_ver = new_version.strip()
+        # Stocker sans le 'v' initial pour uniformiser l'inventaire si c'est une release
+        if clean_ver.lower().startswith('v'):
+            clean_ver = clean_ver[1:]
+        conn.execute("UPDATE assets SET version_actuelle = ? WHERE id = ?;", (clean_ver, asset_id))
+        
     conn.execute("UPDATE alerts SET resolved = 1 WHERE asset_id = ? AND resolved = 0;", (asset_id,))
     conn.commit()
     conn.close()
-    return jsonify({'success': True})
+    
+    return jsonify({
+        'success': True,
+        'updated_version': new_version
+    })
 
 @app.route('/api/alerts/refresh', methods=['POST'])
 def refresh_alerts():
