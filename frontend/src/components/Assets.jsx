@@ -1,0 +1,550 @@
+import React, { useState, useEffect } from 'react';
+
+export default function Assets({ backendUrl }) {
+  const [assets, setAssets] = useState([]);
+  const [team, setTeam] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Form State
+  const [nomProduit, setNomProduit] = useState('');
+  const [fournisseur, setFournisseur] = useState('');
+  const [versionActuelle, setVersionActuelle] = useState('');
+  const [typeDeploiement, setTypeDeploiement] = useState('SaaS');
+  const [machineHebergement, setMachineHebergement] = useState('');
+  const [typeLicence, setTypeLicence] = useState('Perpétuelle');
+  const [dateExpiration, setDateExpiration] = useState('');
+  const [urlRss, setUrlRss] = useState('');
+  const [responsable, setResponsable] = useState('');
+  const [entites, setEntites] = useState(['Groupe']);
+
+  const fetchAssets = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${backendUrl}/api/assets`);
+      if (res.ok) {
+        const data = await res.json();
+        setAssets(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTeam = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/team`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeam(data);
+        if (data.length > 0 && !responsable) {
+          setResponsable(data[0].trigramme);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAssets();
+    fetchTeam();
+  }, []);
+
+  // Règles de gestion de la licence et du déploiement
+  useEffect(() => {
+    if (typeLicence === 'Perpétuelle') {
+      setDateExpiration('');
+    }
+  }, [typeLicence]);
+
+  useEffect(() => {
+    if (typeDeploiement !== 'Self-hosted') {
+      setMachineHebergement('');
+    }
+  }, [typeDeploiement]);
+
+  const openAddForm = () => {
+    setEditingAsset(null);
+    setNomProduit('');
+    setFournisseur('');
+    setVersionActuelle('');
+    setTypeDeploiement('SaaS');
+    setMachineHebergement('');
+    setTypeLicence('Perpétuelle');
+    setDateExpiration('');
+    setUrlRss('');
+    setEntites(['Groupe']);
+    if (team.length > 0) {
+      setResponsable(team[0].trigramme);
+    } else {
+      setResponsable('');
+    }
+    setErrorMessage('');
+    setFormOpen(true);
+  };
+
+  const openEditForm = (asset) => {
+    setEditingAsset(asset);
+    setNomProduit(asset.nom_produit);
+    setFournisseur(asset.fournisseur || '');
+    setVersionActuelle(asset.version_actuelle);
+    setTypeDeploiement(asset.type_deploiement);
+    setMachineHebergement(asset.machine_hebergement || '');
+    setTypeLicence(asset.type_licence || 'Perpétuelle');
+    setDateExpiration(asset.date_expiration || '');
+    setUrlRss(asset.url_rss || '');
+    setResponsable(asset.responsable);
+    setEntites(asset.entites ? asset.entites.split(', ') : ['Groupe']);
+    setErrorMessage('');
+    setFormOpen(true);
+  };
+
+  const handleEntityChange = (option, checked) => {
+    if (checked) {
+      setEntites([...entites, option]);
+    } else {
+      setEntites(entites.filter(item => item !== option));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    // Validation : Seuls les champs Nom, version, déploiement et responsable sont requis
+    if (!nomProduit.trim() || !versionActuelle.trim() || !typeDeploiement || !responsable) {
+      setErrorMessage("Veuillez remplir les champs obligatoires (Nom du produit, Version actuelle, Déploiement et Responsable).");
+      return;
+    }
+
+    if (typeDeploiement === 'Self-hosted' && !machineHebergement.trim()) {
+      setErrorMessage("L'hôte d'hébergement est requis pour un déploiement Self-hosted.");
+      return;
+    }
+
+    if (typeLicence === 'Limitée' && !dateExpiration) {
+      setErrorMessage("La date d'expiration de la licence est requise.");
+      return;
+    }
+
+    const payload = {
+      nom_produit: nomProduit.trim(),
+      fournisseur: fournisseur.trim() || null,
+      version_actuelle: versionActuelle.trim(),
+      type_deploiement: typeDeploiement,
+      machine_hebergement: typeDeploiement === 'Self-hosted' ? machineHebergement.trim() : null,
+      type_licence: typeLicence,
+      date_expiration: typeLicence === 'Limitée' ? dateExpiration : null,
+      url_rss: urlRss.trim() || null,
+      responsable: responsable,
+      entites: entites
+    };
+
+    try {
+      let url = `${backendUrl}/api/assets`;
+      let method = 'POST';
+
+      if (editingAsset) {
+        url = `${backendUrl}/api/assets/${editingAsset.id}`;
+        method = 'PUT';
+      }
+
+      const res = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        setFormOpen(false);
+        fetchAssets();
+      } else {
+        const data = await res.json();
+        setErrorMessage(data.error || "Une erreur est survenue lors de l'enregistrement.");
+      }
+    } catch (err) {
+      setErrorMessage("Erreur de connexion avec le serveur.");
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async (assetId) => {
+    if (!confirm("Voulez-vous supprimer cet actif ? Les alertes associées seront également purgées.")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${backendUrl}/api/assets/${assetId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchAssets();
+      } else {
+        alert("Erreur lors de la suppression de l'actif.");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-brand-dark">Actifs & Services</h1>
+          <p className="text-sm text-brand-text/70 mt-1">
+            Inventaire des logiciels, services et systèmes exploités par la PME.
+          </p>
+        </div>
+        {!formOpen && (
+          <button
+            onClick={openAddForm}
+            className="mt-4 md:mt-0 px-4 py-2 bg-brand-primary text-white text-sm font-semibold rounded-lg hover:bg-brand-primary/95 transition-all shadow-sm flex items-center self-start"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            Ajouter un actif
+          </button>
+        )}
+      </div>
+
+      {/* Form Card */}
+      {formOpen && (
+        <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm p-6 transition-all duration-300">
+          <div className="flex items-center justify-between border-b border-brand-border pb-4 mb-6">
+            <h3 className="text-lg font-bold text-brand-dark">
+              {editingAsset ? "Modifier l'actif" : "Ajouter un nouvel actif"}
+            </h3>
+            <button
+              onClick={() => setFormOpen(false)}
+              className="text-brand-text/50 hover:text-brand-text p-1.5 hover:bg-brand-bg rounded-lg transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+
+          {errorMessage && (
+            <div className="p-3 bg-brand-alertBg text-brand-alert rounded-lg text-xs font-semibold border border-brand-alert/20 mb-6">
+              {errorMessage}
+            </div>
+          )}
+
+          {team.length === 0 ? (
+            <div className="p-4 bg-brand-alertBg text-brand-alert rounded-lg text-sm border border-brand-alert/20 text-center font-medium">
+              Veuillez d'abord enregistrer un membre de l'équipe pour pouvoir désigner un responsable.
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Nom du produit */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Nom du produit *</label>
+                  <input
+                    type="text"
+                    required
+                    value={nomProduit}
+                    onChange={(e) => setNomProduit(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+
+                {/* Fournisseur */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Fournisseur</label>
+                  <input
+                    type="text"
+                    value={fournisseur}
+                    onChange={(e) => setFournisseur(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+
+                {/* Version actuelle */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Version actuelle *</label>
+                  <input
+                    type="text"
+                    required
+                    value={versionActuelle}
+                    onChange={(e) => setVersionActuelle(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+
+                {/* Responsable */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Responsable *</label>
+                  <select
+                    value={responsable}
+                    onChange={(e) => setResponsable(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg bg-white focus:outline-none focus:border-brand-primary"
+                  >
+                    {team.map((member) => (
+                      <option key={member.trigramme} value={member.trigramme}>
+                        {member.trigramme} ({member.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Type de déploiement */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Type de déploiement *</label>
+                  <select
+                    value={typeDeploiement}
+                    onChange={(e) => setTypeDeploiement(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg bg-white focus:outline-none focus:border-brand-primary"
+                  >
+                    <option value="SaaS">SaaS</option>
+                    <option value="Self-hosted">Self-hosted</option>
+                    <option value="On-premise">On-premise</option>
+                  </select>
+                </div>
+
+                {/* Type de licence */}
+                <div>
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Type de licence</label>
+                  <select
+                    value={typeLicence}
+                    onChange={(e) => setTypeLicence(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg bg-white focus:outline-none focus:border-brand-primary"
+                  >
+                    <option value="Perpétuelle">Perpétuelle</option>
+                    <option value="Limitée">Limitée</option>
+                  </select>
+                </div>
+
+                {/* Multi-selection Entités */}
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Entité(s) associée(s)</label>
+                  <div className="flex flex-wrap gap-5 py-2">
+                    {['Groupe', 'Herakles', 'Oztyis', 'Hexatio'].map((option) => (
+                      <label key={option} className="inline-flex items-center text-sm font-semibold text-brand-text cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={entites.includes(option)}
+                          onChange={(e) => handleEntityChange(option, e.target.checked)}
+                          className="rounded border-brand-border text-brand-primary focus:ring-brand-primary h-4 w-4 mr-2"
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Fields with transitions */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Hosting */}
+                <div 
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    typeDeploiement === 'Self-hosted' 
+                      ? 'max-h-24 opacity-100' 
+                      : 'max-h-0 opacity-0 pointer-events-none'
+                  }`}
+                >
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">
+                    Machine / Serveur d'hébergement *
+                  </label>
+                  <input
+                    type="text"
+                    required={typeDeploiement === 'Self-hosted'}
+                    value={machineHebergement}
+                    onChange={(e) => setMachineHebergement(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+
+                {/* Expiration date */}
+                <div 
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    typeLicence === 'Limitée' 
+                      ? 'max-h-24 opacity-100' 
+                      : 'max-h-0 opacity-0 pointer-events-none'
+                  }`}
+                >
+                  <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">
+                    Date d'expiration de la licence *
+                  </label>
+                  <input
+                    type="date"
+                    required={typeLicence === 'Limitée'}
+                    value={dateExpiration}
+                    onChange={(e) => setDateExpiration(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+              </div>
+
+              {/* RSS URL */}
+              <div>
+                <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">
+                  URL Flux RSS (Avis de sécurité)
+                </label>
+                <input
+                  type="url"
+                  value={urlRss}
+                  onChange={(e) => setUrlRss(e.target.value)}
+                  className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                />
+              </div>
+
+              {/* Form Buttons */}
+              <div className="flex items-center justify-end space-x-4 border-t border-brand-border pt-4">
+                <button
+                  type="button"
+                  onClick={() => setFormOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-brand-text/75 hover:bg-brand-bg rounded-lg transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-brand-primary text-white text-xs font-semibold rounded-lg hover:bg-brand-primary/95 transition-all shadow-sm"
+                >
+                  {editingAsset ? "Enregistrer" : "Créer l'actif"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {/* Assets Table */}
+      <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm">
+        <div className="p-6">
+          {loading ? (
+            <div className="space-y-4 py-4">
+              <div className="h-6 bg-brand-bg animate-pulse rounded w-full"></div>
+              <div className="h-6 bg-brand-bg animate-pulse rounded w-11/12"></div>
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="text-center py-12">
+              <span className="text-sm text-brand-text/50 font-medium block">
+                Aucun actif enregistré.
+              </span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-brand-border">
+                <thead>
+                  <tr className="bg-brand-bg/50">
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Produit</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Entités</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Fournisseur</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Version</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Déploiement</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Hébergement</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Licence</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Expiration</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">RSS</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Resp.</th>
+                    <th scope="col" className="relative px-4 py-3 text-right">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-brand-border">
+                  {assets.map((asset) => (
+                    <tr key={asset.id} className="hover:bg-brand-bg/25 transition-colors">
+                      {/* Produit */}
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-brand-dark">
+                        {asset.nom_produit}
+                      </td>
+                      {/* Entités associated */}
+                      <td className="px-4 py-4 text-xs text-brand-text max-w-[150px]">
+                        <div className="flex flex-wrap gap-1">
+                          {(asset.entites || 'Groupe').split(', ').map((ent, idx) => (
+                            <span key={idx} className="inline-flex px-1.5 py-0.5 rounded bg-brand-bg text-brand-dark border border-brand-border/60 font-semibold text-[10px]">
+                              {ent}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      {/* Fournisseur */}
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-brand-text">
+                        {asset.fournisseur || '-'}
+                      </td>
+                      {/* Version */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/80">
+                        {asset.version_actuelle}
+                      </td>
+                      {/* Déploiement */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs text-brand-text">
+                        {asset.type_deploiement}
+                      </td>
+                      {/* Hébergement */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs text-brand-text/75 italic">
+                        {asset.machine_hebergement || '-'}
+                      </td>
+                      {/* Licence */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full ${
+                          asset.type_licence === 'Limitée'
+                            ? 'bg-brand-alert/10 text-brand-alert'
+                            : 'bg-brand-successBg text-brand-success'
+                        }`}>
+                          {asset.type_licence || 'Perpétuelle'}
+                        </span>
+                      </td>
+                      {/* Expiration */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/80">
+                        {asset.type_licence === 'Limitée' && asset.date_expiration ? (
+                          <span>
+                            {new Date(asset.date_expiration).toLocaleDateString('fr-FR')}
+                          </span>
+                        ) : (
+                          <span className="text-brand-text/40">-</span>
+                        )}
+                      </td>
+                      {/* RSS Configured */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs">
+                        {asset.url_rss ? (
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary font-semibold">
+                            Actif
+                          </span>
+                        ) : (
+                          <span className="text-brand-text/40">Inactif</span>
+                        )}
+                      </td>
+                      {/* Responsable */}
+                      <td className="px-4 py-4 whitespace-nowrap text-xs font-bold text-center">
+                        <span className="px-2 py-1 bg-brand-bg text-brand-dark border border-brand-border rounded" title={asset.email_responsable}>
+                          {asset.responsable}
+                        </span>
+                      </td>
+                      {/* Actions */}
+                      <td className="px-4 py-4 whitespace-nowrap text-right text-xs font-semibold space-x-2">
+                        <button
+                          onClick={() => openEditForm(asset)}
+                          className="px-2.5 py-1.5 text-brand-primary hover:bg-brand-primary/10 rounded-md border border-brand-primary/20 transition-all"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => handleDelete(asset.id)}
+                          className="px-2.5 py-1.5 text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-all"
+                        >
+                          Supprimer
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
