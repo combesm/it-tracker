@@ -24,6 +24,15 @@ def analyze_alert(alert):
     description = alert.get('description') or ''
     version_actuelle = alert.get('version_actuelle') or ''
     
+    # Masquer les alertes de pré-release (nightly, beta, alpha, rc, dev...)
+    # si l'utilisateur utilise une version stable
+    prerelease_keywords = ['nightly', 'beta', 'alpha', 'rc', 'dev', 'test', 'preview']
+    has_prerelease_alert = any(kw in title.lower() or kw in description.lower() for kw in prerelease_keywords)
+    has_prerelease_asset = any(kw in version_actuelle.lower() for kw in prerelease_keywords)
+    
+    if has_prerelease_alert and not has_prerelease_asset:
+        return 'hide', None, None, None
+
     # 1. Flux de Releases (ex: GitHub releases)
     # Le titre contient uniquement la version (ex: "v0.62.4" ou "0.62.4")
     version_pattern = r'^v?\d+(?:\.\d+)+(?:-\d+)?$'
