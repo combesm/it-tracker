@@ -40,7 +40,7 @@ export default function History({ backendUrl }) {
         <div>
           <h1 className="text-2xl font-bold text-brand-dark">Historique des mises à jour</h1>
           <p className="text-sm text-brand-text/70 mt-1">
-            Journal complet de l'évolution des versions de vos actifs informatiques.
+            Journal des versions de vos actifs informatiques consignées en base de données.
           </p>
         </div>
         <button
@@ -90,53 +90,43 @@ export default function History({ backendUrl }) {
         </div>
       </div>
 
-      {/* History List */}
-      <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm p-6">
-        {loading ? (
-          <div className="space-y-4 py-4">
-            <div className="h-6 bg-brand-bg animate-pulse rounded w-3/4"></div>
-            <div className="h-6 bg-brand-bg animate-pulse rounded w-2/3"></div>
-            <div className="h-6 bg-brand-bg animate-pulse rounded w-1/2"></div>
-          </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="text-center py-12 text-sm text-brand-text/50 font-medium italic bg-brand-bg/10 rounded-lg border border-dashed border-brand-border">
-            {search ? 'Aucun résultat ne correspond à votre recherche.' : 'Aucun historique de mise à jour disponible.'}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 bg-white border border-brand-border/60 rounded-lg hover:border-brand-border transition-colors hover:shadow-xs gap-3"
-              >
-                <div className="flex items-start gap-3">
-                  {/* Icon indicator */}
-                  <div className="p-2 bg-brand-successBg rounded-lg text-brand-success border border-brand-success/15 mt-0.5">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-brand-dark">
-                      {log.nom_produit}
-                    </h3>
-                    <p className="text-xs text-brand-text/70 mt-1">
-                      Mise à jour effectuée : de la version <span className="font-semibold text-brand-text">{log.ancienne_version || 'N/A'}</span> vers la version <span className="font-bold text-brand-dark">{log.nouvelle_version}</span>.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 sm:self-center self-end">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-successBg text-brand-success border border-brand-success/15 uppercase">
-                    Succès
-                  </span>
-                  <span className="text-xs font-medium text-brand-text/50 whitespace-nowrap">
-                    le {log.date_maj}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Simple Logs Table */}
+      <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm overflow-hidden">
+        <div className="p-6">
+          {loading ? (
+            <div className="space-y-4 py-2">
+              <div className="h-5 bg-brand-bg animate-pulse rounded w-full"></div>
+              <div className="h-5 bg-brand-bg animate-pulse rounded w-11/12"></div>
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="text-center py-12 text-sm text-brand-text/50 font-medium italic bg-brand-bg/10 rounded-lg border border-dashed border-brand-border">
+              {search ? 'Aucun résultat ne correspond à votre recherche.' : 'Aucun historique de mise à jour disponible.'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-brand-border">
+                <thead>
+                  <tr className="bg-brand-bg/50">
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Date & Heure</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Actif</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Ancienne Version</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Nouvelle Version</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-brand-border text-xs">
+                  {filteredLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-brand-bg/10 transition-colors">
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-text/60 font-medium">{log.date_maj}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-semibold text-brand-dark">{log.nom_produit}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-text/75">{log.ancienne_version || 'N/A'}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-brand-dark font-semibold">{log.nouvelle_version}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
