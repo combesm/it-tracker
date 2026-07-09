@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ activeTab, setActiveTab }) {
+export default function Sidebar({ activeTab, setActiveTab, onExport }) {
   const menuItems = [
     {
       id: 'dashboard',
@@ -58,6 +58,19 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           );
         })}
       </nav>
+
+      {/* Action: Export Excel */}
+      <div className="px-4 py-4 border-t border-brand-border/10 bg-brand-dark/30">
+        <button
+          onClick={onExport}
+          className="w-full flex items-center justify-center px-4 py-2.5 text-xs font-semibold rounded-lg bg-brand-primary hover:bg-brand-primary/95 text-white transition-all shadow-sm cursor-pointer"
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+          Exporter en Excel
+        </button>
+      </div>
 
       {/* Sidebar Footer */}
       <div className="p-4 border-t border-brand-border/10 text-center bg-brand-dark/50">

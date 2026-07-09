@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Assets from './components/Assets';
 import Team from './components/Team';
+import * as XLSX from 'xlsx';
 
 // Utiliser localhost:5000 en dev, et l'origine courante en prod (servie par Flask)
 const BACKEND_URL = import.meta.env.DEV ? 'http://localhost:5000' : '';
@@ -14,6 +15,67 @@ export default function App() {
 
   const handleTeamChange = () => {
     setTeamRefreshKey(prev => prev + 1);
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      // 1. Récupération des Actifs
+      const resAssets = await fetch(`${BACKEND_URL}/api/assets`);
+      const assets = resAssets.ok ? await resAssets.json() : [];
+
+      // 2. Récupération de l'Équipe
+      const resTeam = await fetch(`${BACKEND_URL}/api/team`);
+      const team = resTeam.ok ? await resTeam.json() : [];
+
+      // 3. Récupération des Alertes Actives
+      const resAlerts = await fetch(`${BACKEND_URL}/api/alerts`);
+      const alerts = resAlerts.ok ? await resAlerts.json() : [];
+
+      // Initialiser le classeur Excel
+      const wb = XLSX.utils.book_new();
+
+      // Onglet 1 : Actifs & Services
+      const assetsData = assets.map(a => ({
+        "Nom du produit": a.nom_produit,
+        "Entités": a.entites || 'Groupe',
+        "Fournisseur": a.fournisseur || '',
+        "Version actuelle": a.version_actuelle,
+        "Type de déploiement": a.type_deploiement,
+        "Hébergement / Machine": a.machine_hebergement || '',
+        "Type de licence": a.type_licence || 'Perpétuelle',
+        "Date d'expiration": a.date_expiration ? new Date(a.date_expiration).toLocaleDateString('fr-FR') : '',
+        "Responsable (Trigramme)": a.responsable,
+        "Email Responsable": a.email_responsable || '',
+        "Flux RSS": a.url_rss || ''
+      }));
+      const wsAssets = XLSX.utils.json_to_sheet(assetsData);
+      XLSX.utils.book_append_sheet(wb, wsAssets, "Actifs & Services");
+
+      // Onglet 2 : Membres de l'Équipe
+      const teamData = team.map(t => ({
+        "Trigramme": t.trigramme,
+        "Adresse Email": t.email
+      }));
+      const wsTeam = XLSX.utils.json_to_sheet(teamData);
+      XLSX.utils.book_append_sheet(wb, wsTeam, "Membres de l'Équipe");
+
+      // Onglet 3 : Alertes de Sécurité
+      const alertsData = alerts.map(al => ({
+        "Actif concerné": al.nom_produit,
+        "Alerte / Faille": al.title,
+        "Date de publication": al.pub_date ? new Date(al.pub_date).toLocaleDateString('fr-FR') : '',
+        "Responsable": al.responsable,
+        "Lien source": al.link || ''
+      }));
+      const wsAlerts = XLSX.utils.json_to_sheet(alertsData);
+      XLSX.utils.book_append_sheet(wb, wsAlerts, "Alertes Actives");
+
+      // Télécharger le fichier Excel
+      XLSX.writeFile(wb, "Inventaire_IT_Herakles.xlsx");
+    } catch (err) {
+      console.error("Erreur lors de l'export Excel:", err);
+      alert("Une erreur est survenue lors de la génération du fichier Excel.");
+    }
   };
 
   const renderContent = () => {
@@ -31,8 +93,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans">
-      {/* Sidebar de navigation latérale fixe */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      {/* Sidebar de navigation latérale fixe avec prop d'export */}
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onExport={handleExportExcel} />
 
       {/* Zone de contenu principale décalée à droite de la Sidebar */}
       <main className="pl-64 min-h-screen">
