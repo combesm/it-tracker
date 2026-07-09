@@ -397,7 +397,7 @@ def resolve_alert(alert_id):
 
 @app.route('/api/alerts/resolve-asset/<int:asset_id>', methods=['POST'])
 def resolve_asset_alerts(asset_id):
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     new_version = data.get('new_version')
     
     conn = get_db_connection()
