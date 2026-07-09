@@ -34,11 +34,8 @@ export default function Sidebar({ activeTab, setActiveTab }) {
   return (
     <aside className="fixed inset-y-0 left-0 w-64 bg-brand-dark text-white flex flex-col z-20 border-r border-brand-border/10">
       {/* Sidebar Header */}
-      <div className="h-16 flex items-center px-6 border-b border-brand-border/10 bg-brand-dark">
-        <img src="/logo.png" alt="Herakles" className="h-8 w-auto object-contain" />
-        <span className="ml-3 text-sm font-bold tracking-wider text-white/90 uppercase">
-          IT Tracker
-        </span>
+      <div className="h-20 flex items-center justify-center px-4 border-b border-brand-border/10 bg-brand-dark">
+        <img src="/logo.png" alt="Herakles Groupe" className="h-12 w-auto max-w-full object-contain" />
       </div>
 
       {/* Navigation Menu */}

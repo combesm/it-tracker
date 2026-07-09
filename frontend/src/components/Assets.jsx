@@ -7,6 +7,7 @@ export default function Assets({ backendUrl }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [expandedAssetId, setExpandedAssetId] = useState(null);
 
   // Form State
   const [nomProduit, setNomProduit] = useState('');
@@ -110,6 +111,10 @@ export default function Assets({ backendUrl }) {
     } else {
       setEntites(entites.filter(item => item !== option));
     }
+  };
+
+  const toggleExpand = (id) => {
+    setExpandedAssetId(prev => prev === id ? null : id);
   };
 
   const handleSubmit = async (e) => {
@@ -439,106 +444,153 @@ export default function Assets({ backendUrl }) {
                 <thead>
                   <tr className="bg-brand-bg/50">
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Produit</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Entités</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Fournisseur</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Version</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Déploiement</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Hébergement</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Licence</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Expiration</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">RSS</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Resp.</th>
                     <th scope="col" className="relative px-4 py-3 text-right">
                       <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-brand-border">
-                  {assets.map((asset) => (
-                    <tr key={asset.id} className="hover:bg-brand-bg/25 transition-colors">
-                      {/* Produit */}
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-brand-dark">
-                        {asset.nom_produit}
-                      </td>
-                      {/* Entités associated */}
-                      <td className="px-4 py-4 text-xs text-brand-text max-w-[150px]">
-                        <div className="flex flex-wrap gap-1">
-                          {(asset.entites || 'Groupe').split(', ').map((ent, idx) => (
-                            <span key={idx} className="inline-flex px-1.5 py-0.5 rounded bg-brand-bg text-brand-dark border border-brand-border/60 font-semibold text-[10px]">
-                              {ent}
+                  {assets.map((asset) => {
+                    const isExpanded = expandedAssetId === asset.id;
+                    return (
+                      <React.Fragment key={asset.id}>
+                        {/* Main row */}
+                        <tr 
+                          onClick={() => toggleExpand(asset.id)}
+                          className={`hover:bg-brand-bg/20 cursor-pointer transition-colors ${
+                            isExpanded ? 'bg-brand-bg/10' : ''
+                          }`}
+                        >
+                          {/* Produit (with rotate chevron) */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-brand-dark">
+                            <div className="flex items-center">
+                              <svg 
+                                className={`w-4 h-4 mr-2.5 text-brand-text/50 transition-transform duration-200 ${
+                                  isExpanded ? 'rotate-90' : ''
+                                }`} 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24" 
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path>
+                              </svg>
+                              {asset.nom_produit}
+                            </div>
+                          </td>
+                          {/* Version */}
+                          <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold text-brand-text/80">
+                            {asset.version_actuelle}
+                          </td>
+                          {/* Responsable */}
+                          <td className="px-4 py-4 whitespace-nowrap text-xs font-bold">
+                            <span className="px-2.5 py-1 bg-brand-bg text-brand-dark border border-brand-border rounded" title={asset.email_responsable}>
+                              {asset.responsable}
                             </span>
-                          ))}
-                        </div>
-                      </td>
-                      {/* Fournisseur */}
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-brand-text">
-                        {asset.fournisseur || '-'}
-                      </td>
-                      {/* Version */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/80">
-                        {asset.version_actuelle}
-                      </td>
-                      {/* Déploiement */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs text-brand-text">
-                        {asset.type_deploiement}
-                      </td>
-                      {/* Hébergement */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs text-brand-text/75 italic">
-                        {asset.machine_hebergement || '-'}
-                      </td>
-                      {/* Licence */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full ${
-                          asset.type_licence === 'Limitée'
-                            ? 'bg-brand-alert/10 text-brand-alert'
-                            : 'bg-brand-successBg text-brand-success'
-                        }`}>
-                          {asset.type_licence || 'Perpétuelle'}
-                        </span>
-                      </td>
-                      {/* Expiration */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/80">
-                        {asset.type_licence === 'Limitée' && asset.date_expiration ? (
-                          <span>
-                            {new Date(asset.date_expiration).toLocaleDateString('fr-FR')}
-                          </span>
-                        ) : (
-                          <span className="text-brand-text/40">-</span>
+                          </td>
+                          {/* Licence */}
+                          <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full ${
+                              asset.type_licence === 'Limitée'
+                                ? 'bg-brand-alert/10 text-brand-alert'
+                                : 'bg-brand-successBg text-brand-success'
+                            }`}>
+                              {asset.type_licence || 'Perpétuelle'}
+                            </span>
+                          </td>
+                          {/* Actions (stop propagation to avoid toggling collapse) */}
+                          <td className="px-4 py-4 whitespace-nowrap text-right text-xs font-semibold space-x-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => openEditForm(asset)}
+                              className="px-2.5 py-1.5 text-brand-primary hover:bg-brand-primary/10 rounded-md border border-brand-primary/20 transition-all"
+                            >
+                              Modifier
+                            </button>
+                            <button
+                              onClick={() => handleDelete(asset.id)}
+                              className="px-2.5 py-1.5 text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-all"
+                            >
+                              Supprimer
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Collapsible details panel */}
+                        {isExpanded && (
+                          <tr className="bg-brand-bg/5">
+                            <td colSpan={5} className="px-8 py-4 border-t border-b border-brand-border/60">
+                              <div className="bg-white rounded-lg border border-brand-border/60 p-5 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Entités associated */}
+                                <div>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Entités associées</span>
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {(asset.entites || 'Groupe').split(', ').map((ent, idx) => (
+                                      <span key={idx} className="inline-flex px-2 py-0.5 rounded bg-brand-bg text-brand-dark border border-brand-border/60 font-semibold text-[10px]">
+                                        {ent}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Fournisseur */}
+                                <div>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Fournisseur</span>
+                                  <span className="font-semibold text-brand-text text-sm mt-1.5 block">
+                                    {asset.fournisseur || 'Non spécifié'}
+                                  </span>
+                                </div>
+
+                                {/* Déploiement */}
+                                <div>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Type de déploiement</span>
+                                  <span className="font-semibold text-brand-text text-sm mt-1.5 block">
+                                    {asset.type_deploiement}
+                                  </span>
+                                </div>
+
+                                {/* Machine/Serveur - Self-hosted */}
+                                {asset.type_deploiement === 'Self-hosted' && (
+                                  <div>
+                                    <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Machine / Serveur d'hébergement</span>
+                                    <span className="font-semibold text-brand-text text-sm mt-1.5 block italic text-brand-primary">
+                                      {asset.machine_hebergement || '-'}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Date d'expiration - Limitée */}
+                                {asset.type_licence === 'Limitée' && (
+                                  <div>
+                                    <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Date d'expiration de licence</span>
+                                    <span className="font-semibold text-brand-text text-sm mt-1.5 block">
+                                      {asset.date_expiration ? new Date(asset.date_expiration).toLocaleDateString('fr-FR') : '-'}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* URL RSS */}
+                                <div>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">URL Flux RSS</span>
+                                  <span className="font-medium text-brand-text text-sm mt-1.5 block truncate" title={asset.url_rss}>
+                                    {asset.url_rss ? (
+                                      <a href={asset.url_rss} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">
+                                        {asset.url_rss}
+                                      </a>
+                                    ) : (
+                                      <span className="text-brand-text/45">Aucun flux configuré</span>
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      {/* RSS Configured */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs">
-                        {asset.url_rss ? (
-                          <span className="inline-flex px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary font-semibold">
-                            Actif
-                          </span>
-                        ) : (
-                          <span className="text-brand-text/40">Inactif</span>
-                        )}
-                      </td>
-                      {/* Responsable */}
-                      <td className="px-4 py-4 whitespace-nowrap text-xs font-bold text-center">
-                        <span className="px-2 py-1 bg-brand-bg text-brand-dark border border-brand-border rounded" title={asset.email_responsable}>
-                          {asset.responsable}
-                        </span>
-                      </td>
-                      {/* Actions */}
-                      <td className="px-4 py-4 whitespace-nowrap text-right text-xs font-semibold space-x-2">
-                        <button
-                          onClick={() => openEditForm(asset)}
-                          className="px-2.5 py-1.5 text-brand-primary hover:bg-brand-primary/10 rounded-md border border-brand-primary/20 transition-all"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          onClick={() => handleDelete(asset.id)}
-                          className="px-2.5 py-1.5 text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-all"
-                        >
-                          Supprimer
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
