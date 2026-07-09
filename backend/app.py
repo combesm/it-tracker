@@ -5,6 +5,107 @@ import os
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, date
+import re
+from packaging.version import Version, InvalidVersion
+
+def parse_version_safe(v_str):
+    if not v_str:
+        return None
+    v_clean = v_str.strip()
+    if v_clean.lower().startswith('v'):
+        v_clean = v_clean[1:]
+    try:
+        return Version(v_clean)
+    except InvalidVersion:
+        return None
+
+def analyze_alert(alert):
+    title = alert.get('title') or ''
+    description = alert.get('description') or ''
+    version_actuelle = alert.get('version_actuelle') or ''
+    
+    # 1. Flux de Releases (ex: GitHub releases)
+    # Le titre contient uniquement la version (ex: "v0.62.4" ou "0.62.4")
+    version_pattern = r'^v?\d+(?:\.\d+)+(?:-\d+)?$'
+    clean_title = title.strip()
+    
+    is_release_feed = bool(re.match(version_pattern, clean_title, re.IGNORECASE))
+    
+    if is_release_feed:
+        rss_ver = parse_version_safe(clean_title)
+        asset_ver = parse_version_safe(version_actuelle)
+        
+        if rss_ver is None:
+            return 'show', 'manual_check', 'Vérification manuelle de la version requise', 'Non déterminée'
+            
+        if asset_ver is None:
+            return 'show', 'manual_check', 'Vérification manuelle de la version requise', clean_title
+            
+        if rss_ver <= asset_ver:
+            return 'hide', None, None, None
+        else:
+            return 'show', 'update_available', 'Mise à jour disponible', clean_title
+            
+    # 2. Flux de Sécurité textuels (ex: Joomla, CERT-FR)
+    full_text = f"{title} \n {description}"
+    asset_ver = parse_version_safe(version_actuelle)
+    
+    if asset_ver is None:
+        return 'show', 'manual_check', 'Vérification manuelle de la version requise', 'Non déterminée'
+        
+    # Recherche d'indices de correctifs ou de versions saines
+    correction_patterns = [
+        r'(?:upgrade|update|corrige|fix|patch)\s+(?:to|in|à|dans)?\s*(?:version|v)?\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+        r'fixed\s+in\s*(?:version|v)?\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+        r'corrigé\s+dans\s+la\s+version\s*(\d+\.\d+\.\d+(?:\.\d+)?)'
+    ]
+    
+    for pat in correction_patterns:
+        match = re.search(pat, full_text, re.IGNORECASE)
+        if match:
+            fixed_ver_str = match.group(1)
+            fixed_ver = parse_version_safe(fixed_ver_str)
+            if fixed_ver and asset_ver >= fixed_ver:
+                return 'hide', None, None, None
+
+    # Recherche de plages de versions vulnérables
+    range_patterns = [
+        r'(?:versions?:?\s*)?(\d+\.\d+\.\d+(?:\.\d+)?)\s*(?:-|through|à|to)\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+        r'versions?\s*(?:impactees|impactées)?\s*:?\s*(\d+\.\d+\.\d+(?:\.\d+)?)\s*-\s*(\d+\.\d+\.\d+(?:\.\d+)?)'
+    ]
+    
+    for pat in range_patterns:
+        match = re.search(pat, full_text, re.IGNORECASE)
+        if match:
+            start_str, end_str = match.group(1), match.group(2)
+            start_ver = parse_version_safe(start_str)
+            end_ver = parse_version_safe(end_str)
+            
+            if start_ver and end_ver:
+                if start_ver <= asset_ver <= end_ver:
+                    return 'show', 'high', 'Actif vulnérable (impacté)', f"{start_str} - {end_str}"
+                else:
+                    return 'hide', None, None, None
+
+    # Recherche de versions antérieures vulnérables
+    before_patterns = [
+        r'versions?\s*(?:anterieures|antérieures|avant|before|prior\s+to)\s*(?:a|à)?\s*(?:version|v)?\s*(\d+\.\d+\.\d+(?:\.\d+)?)',
+        r'versions?\s*<\s*(\d+\.\d+\.\d+(?:\.\d+)?)'
+    ]
+    
+    for pat in before_patterns:
+        match = re.search(pat, full_text, re.IGNORECASE)
+        if match:
+            limit_str = match.group(1)
+            limit_ver = parse_version_safe(limit_str)
+            if limit_ver:
+                if asset_ver < limit_ver:
+                    return 'show', 'high', 'Actif vulnérable (inférieur)', f"< {limit_str}"
+                else:
+                    return 'hide', None, None, None
+
+    # Si aucune correspondance n'est trouvée -> Fallback (vérification manuelle)
+    return 'show', 'manual_check', 'Vérification manuelle de la version requise', 'Non déterminée'
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
 CORS(app) # Permet le cross-origin en développement
@@ -70,13 +171,22 @@ def fetch_rss_feed(url):
             if pub_date_elem is None:
                 pub_date_elem = find_child(item_elem, 'published')
             
+            # Extraction de description / summary / content
+            desc_elem = find_child(item_elem, 'description')
+            if desc_elem is None:
+                desc_elem = find_child(item_elem, 'summary')
+            if desc_elem is None:
+                desc_elem = find_child(item_elem, 'content')
+            
             title_text = title_elem.text if title_elem is not None else "Sans titre"
             pub_date_text = pub_date_elem.text if pub_date_elem is not None and pub_date_elem.text is not None else ""
+            desc_text = desc_elem.text if desc_elem is not None and desc_elem.text is not None else ""
             
             items.append({
                 'title': title_text,
                 'link': link_text,
-                'pub_date': pub_date_text
+                'pub_date': pub_date_text,
+                'description': desc_text
             })
         return items
     except Exception as e:
@@ -256,15 +366,26 @@ def delete_asset(asset_id):
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
     conn = get_db_connection()
-    alerts = conn.execute("""
-        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable
+    alerts_raw = conn.execute("""
+        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
         FROM alerts al
         JOIN assets asst ON al.asset_id = asst.id
         WHERE al.resolved = 0
         ORDER BY al.pub_date DESC, al.id DESC;
     """).fetchall()
     conn.close()
-    return jsonify([dict(a) for a in alerts])
+    
+    filtered_alerts = []
+    for a in alerts_raw:
+        alert_dict = dict(a)
+        status, priority, status_text, affected_versions = analyze_alert(alert_dict)
+        if status != 'hide':
+            alert_dict['priority'] = priority
+            alert_dict['status_text'] = status_text
+            alert_dict['affected_versions'] = affected_versions
+            filtered_alerts.append(alert_dict)
+            
+    return jsonify(filtered_alerts)
 
 @app.route('/api/alerts/resolve/<int:alert_id>', methods=['POST'])
 def resolve_alert(alert_id):
@@ -303,17 +424,18 @@ def refresh_alerts():
             """, (asset_id, title, link)).fetchone()
             
             if not existing:
+                description = item.get('description', '')
                 conn.execute("""
-                    INSERT INTO alerts (asset_id, title, link, pub_date, resolved)
-                    VALUES (?, ?, ?, ?, 0);
-                """, (asset_id, title, link, pub_date))
+                    INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
+                    VALUES (?, ?, ?, ?, ?, 0);
+                """, (asset_id, title, description, link, pub_date))
                 new_alerts_count += 1
                 
     conn.commit()
     
     # Récupérer les alertes restantes non résolues
-    alerts = conn.execute("""
-        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable
+    alerts_raw = conn.execute("""
+        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
         FROM alerts al
         JOIN assets asst ON al.asset_id = asst.id
         WHERE al.resolved = 0
@@ -321,8 +443,19 @@ def refresh_alerts():
     """).fetchall()
     
     conn.close()
+    
+    filtered_alerts = []
+    for a in alerts_raw:
+        alert_dict = dict(a)
+        status, priority, status_text, affected_versions = analyze_alert(alert_dict)
+        if status != 'hide':
+            alert_dict['priority'] = priority
+            alert_dict['status_text'] = status_text
+            alert_dict['affected_versions'] = affected_versions
+            filtered_alerts.append(alert_dict)
+            
     return jsonify({
-        'alerts': [dict(a) for a in alerts],
+        'alerts': filtered_alerts,
         'new_alerts_count': new_alerts_count,
         'unreachable_urls': unreachable_urls
     })
@@ -347,8 +480,19 @@ def get_stats():
     # Actifs & Services (Total)
     total_assets = conn.execute("SELECT COUNT(*) FROM assets;").fetchone()[0]
     
-    # Alertes en attente
-    pending_alerts = conn.execute("SELECT COUNT(*) FROM alerts WHERE resolved = 0;").fetchone()[0]
+    # Alertes en attente (uniquement celles visibles après filtrage)
+    alerts_raw = conn.execute("""
+        SELECT al.*, asst.version_actuelle as version_actuelle
+        FROM alerts al
+        JOIN assets asst ON al.asset_id = asst.id
+        WHERE al.resolved = 0;
+    """).fetchall()
+    
+    pending_alerts = 0
+    for a in alerts_raw:
+        status, _, _, _ = analyze_alert(dict(a))
+        if status != 'hide':
+            pending_alerts += 1
     
     # Licences expirant dans moins de 30 jours
     assets_with_expiry = conn.execute("""

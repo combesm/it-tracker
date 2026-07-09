@@ -45,12 +45,13 @@ def init_db():
     );
     """)
 
-    # Table Alerts
+    # Table Alerts (avec la colonne description)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         asset_id INTEGER NOT NULL,
         title TEXT NOT NULL,
+        description TEXT,
         link TEXT,
         pub_date TEXT,
         resolved INTEGER DEFAULT 0,
@@ -69,28 +70,54 @@ def init_db():
     cursor.executemany("INSERT INTO team (trigramme, email) VALUES (?, ?);", members)
 
     # Actifs & Services
-    # Champs requis : nom_produit, version_actuelle, type_deploiement, responsable
-    # Optionnels : fournisseur (nullable), type_licence (default Perpétuelle), date_expiration, url_rss, entites (default Groupe)
     assets = [
         ('Synology DSM', 'Synology', '7.2.1-69057', 'Self-hosted', 'NAS-PHY-01 (IP: 192.168.1.100)', 'Perpétuelle', None, 'https://www.cert.ssi.gouv.fr/feed/', 'MUC', 'Herakles'),
-        ('Slack Enterprise Grid', None, 'Cloud', 'SaaS', None, 'Limitée', '2026-07-28', '', 'JDO', 'Groupe, Herakles, Oztyis'),
-        ('Windows Server 2022', 'Microsoft', '21H2 (10.0.20348)', 'On-premise', None, 'Limitée', '2027-12-31', 'https://www.cert.ssi.gouv.fr/feed/', 'ALF', 'Hexatio, Oztyis')
+        ('Windows Server 2022', 'Microsoft', '21H2 (10.0.20348)', 'On-premise', None, 'Limitée', '2027-12-31', 'https://www.cert.ssi.gouv.fr/feed/', 'ALF', 'Hexatio, Oztyis'),
+        ('Metabase', 'Metabase Core', '0.45.0', 'Self-hosted', 'VM-APP-02', 'Perpétuelle', None, 'https://github.com/metabase/metabase/releases.atom', 'JDO', 'Groupe, Herakles')
     ]
     cursor.executemany("""
     INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, assets)
 
-    # Quelques alertes par défaut pour démarrer
+    # Récupérer les IDs des actifs
     cursor.execute("SELECT id FROM assets WHERE nom_produit = 'Synology DSM';")
     synology_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM assets WHERE nom_produit = 'Windows Server 2022';")
+    windows_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM assets WHERE nom_produit = 'Metabase';")
+    metabase_id = cursor.fetchone()[0]
+
+    # Données d'alertes de test riches pour le filtrage
     alerts = [
-        (synology_id, "CERTFR-2026-AVI-0500 : Vulnérabilité dans Synology DSM", "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0500/", "2026-07-08T10:00:00Z", 0),
-        (synology_id, "CERTFR-2026-AVI-0498 : Multiples vulnérabilités dans les produits Synology", "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0498/", "2026-07-07T14:30:00Z", 0)
+        # Synology alerte 1 : Corrigé en 7.2.1-69057. Notre version est 7.2.1-69057. Cette alerte doit être MASQUÉE !
+        (synology_id, "CERTFR-2026-AVI-0500 : Vulnérabilité dans Synology DSM", 
+         "Une faille affecte Synology DSM. Versions impactées : 7.0.0-7.2.1-69056. Upgrade to version 7.2.1-69057 pour corriger.", 
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0500/", "2026-07-08T10:00:00Z", 0),
+        
+        # Synology alerte 2 : Versions antérieures à 7.2.2-00000. Notre version est 7.2.1-69057. Cette alerte doit s'afficher en priorité HAUTE !
+        (synology_id, "CERTFR-2026-AVI-0498 : Multiples vulnérabilités dans les produits Synology", 
+         "Des failles critiques ont été identifiées. Affected Installs: versions antérieures à 7.2.2-00000.", 
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0498/", "2026-07-07T14:30:00Z", 0),
+        
+        # Windows alerte 1 : Pas d'informations précises de version dans la description. Doit s'afficher en REPLI (Vérification manuelle).
+        (windows_id, "CERTFR-2026-AVI-0480 : Vulnérabilités dans Microsoft Windows Server", 
+         "Des vulnérabilités non spécifiées permettent l'exécution de code à distance sur les serveurs.", 
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0480/", "2026-07-06T09:00:00Z", 0),
+
+        # Metabase alerte 1 : Release v0.46.0. Notre version actuelle est 0.45.0. Doit s'afficher comme MISE À JOUR DISPONIBLE.
+        (metabase_id, "v0.46.0", 
+         "Nouvelle version corrective et fonctionnelle de Metabase.", 
+         "https://github.com/metabase/metabase/releases/tag/v0.46.0", "2026-07-05T12:00:00Z", 0),
+
+        # Metabase alerte 2 : Release v0.44.0. Notre version actuelle est 0.45.0. Cette alerte doit être MASQUÉE car nous sommes déjà en version supérieure !
+        (metabase_id, "v0.44.0", 
+         "Version obsolète de Metabase.", 
+         "https://github.com/metabase/metabase/releases/tag/v0.44.0", "2026-07-04T12:00:00Z", 0)
     ]
     cursor.executemany("""
-    INSERT INTO alerts (asset_id, title, link, pub_date, resolved)
-    VALUES (?, ?, ?, ?, ?);
+    INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
+    VALUES (?, ?, ?, ?, ?, ?);
     """, alerts)
 
     conn.commit()

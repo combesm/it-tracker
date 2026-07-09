@@ -404,6 +404,32 @@ export default function Dashboard({ backendUrl }) {
                                       <h4 className="text-sm font-semibold text-brand-text leading-snug">
                                         {alert.title}
                                       </h4>
+                                      
+                                      {/* Version Details Badge line */}
+                                      <div className="flex flex-wrap gap-2 items-center text-xs font-medium py-1.5">
+                                        <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
+                                          Votre version : <span className="font-bold text-brand-dark">{alert.version_actuelle}</span>
+                                        </span>
+                                        <span className="text-brand-text/30">|</span>
+                                        <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
+                                          Versions impactées : <span className="font-bold text-brand-dark">{alert.affected_versions || 'Non déterminée'}</span>
+                                        </span>
+                                        {alert.status_text && (
+                                          <>
+                                            <span className="text-brand-text/30">|</span>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                              alert.priority === 'high' 
+                                                ? 'bg-red-50 text-red-700 border border-red-200' 
+                                                : alert.priority === 'update_available'
+                                                ? 'bg-brand-successBg text-brand-success border border-brand-success/20'
+                                                : 'bg-brand-alert/10 text-brand-alert border border-brand-alert/20'
+                                            }`}>
+                                              {alert.status_text}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+
                                       <div className="flex items-center space-x-3 text-xs text-brand-text/50">
                                         <span>Publié le : {formatDate(alert.pub_date)}</span>
                                         {alert.link && (
