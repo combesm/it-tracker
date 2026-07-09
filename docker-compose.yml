@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  it-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: it-tracker-app
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DB_PATH=/app/backend/data/database.db
+    volumes:
+      # Persistance de la base de données SQLite locale sur la machine hôte
+      # Les données seront stockées dans un dossier local "./data" à la racine du projet
+      - ./data:/app/backend/data
+    restart: always

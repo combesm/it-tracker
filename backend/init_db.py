@@ -1,7 +1,15 @@
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'database.db')
+DB_PATH = os.getenv('DB_PATH', os.path.join(os.path.dirname(__file__), 'database.db'))
+# S'assurer que le dossier parent de la base existe
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Impossible de créer le dossier de base de données {db_dir} : {e}")
+
 
 def init_db():
     print(f"Initialisation de la base de données à : {DB_PATH}")
