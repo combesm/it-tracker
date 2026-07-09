@@ -116,6 +116,25 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
+  const handleResolveAssetAlerts = async (assetId) => {
+    if (!confirm("Voulez-vous marquer toutes les alertes de cet actif comme résolues suite à sa mise à jour ?")) {
+      return;
+    }
+    try {
+      const res = await fetch(`${backendUrl}/api/alerts/resolve-asset/${assetId}`, { method: 'POST' });
+      if (res.ok) {
+        // Retirer toutes les alertes de cet actif de l'état local
+        setAlerts(prev => prev.filter(a => a.asset_id !== assetId));
+        // Rafraîchir les stats
+        fetchStats();
+      } else {
+        alert('Erreur lors de la validation des alertes de l\'actif.');
+      }
+    } catch (err) {
+      console.error("Erreur de réseau lors de la validation de l'actif:", err);
+    }
+  };
+
   useEffect(() => {
     fetchStats();
     fetchAlerts();
@@ -338,6 +357,7 @@ export default function Dashboard({ backendUrl }) {
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Nombre d'alertes</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Dernière publication</th>
                     <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-bold text-brand-dark uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-brand-border">
@@ -388,19 +408,28 @@ export default function Dashboard({ backendUrl }) {
                               {asset.responsable}
                             </span>
                           </td>
+                          {/* Actions (stop propagation pour éviter de plier la ligne) */}
+                          <td className="px-4 py-4 whitespace-nowrap text-right text-sm" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleResolveAssetAlerts(asset.asset_id)}
+                              className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-sm"
+                            >
+                              Valider la mise à jour / Résolu
+                            </button>
+                          </td>
                         </tr>
 
                         {/* Expandable details */}
                         {isExpanded && (
                           <tr className="bg-brand-bg/5">
-                            <td colSpan={5} className="px-8 py-4 border-t border-b border-brand-border/60">
+                            <td colSpan={6} className="px-8 py-4 border-t border-b border-brand-border/60">
                               <div className="bg-white rounded-lg border border-brand-border/60 p-5 shadow-sm space-y-4 divide-y divide-brand-border/50">
                                 <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider mb-2">
                                   Détails des alertes pour {asset.nom_produit}
                                 </span>
                                 {asset.alerts.map((alert) => (
                                   <div key={alert.id} className="pt-4 first:pt-0 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                    <div className="space-y-1 max-w-2xl">
+                                    <div className="space-y-1 max-w-4xl">
                                       <h4 className="text-sm font-semibold text-brand-text leading-snug">
                                         {alert.title}
                                       </h4>
@@ -446,14 +475,6 @@ export default function Dashboard({ backendUrl }) {
                                           </>
                                         )}
                                       </div>
-                                    </div>
-                                    <div onClick={(e) => e.stopPropagation()}>
-                                      <button
-                                        onClick={() => handleResolveAlert(alert.id)}
-                                        className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer"
-                                      >
-                                        Valider la mise à jour / Résolu
-                                      </button>
                                     </div>
                                   </div>
                                 ))}

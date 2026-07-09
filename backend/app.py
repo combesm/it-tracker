@@ -395,6 +395,14 @@ def resolve_alert(alert_id):
     conn.close()
     return jsonify({'success': True})
 
+@app.route('/api/alerts/resolve-asset/<int:asset_id>', methods=['POST'])
+def resolve_asset_alerts(asset_id):
+    conn = get_db_connection()
+    conn.execute("UPDATE alerts SET resolved = 1 WHERE asset_id = ? AND resolved = 0;", (asset_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
 @app.route('/api/alerts/refresh', methods=['POST'])
 def refresh_alerts():
     conn = get_db_connection()
