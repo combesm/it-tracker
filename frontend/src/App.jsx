@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Assets from './components/Assets';
 import Team from './components/Team';
+import History from './components/History';
 import * as XLSX from 'xlsx';
 
 // Utiliser localhost:5000 en dev, et l'origine courante en prod (servie par Flask)
@@ -86,6 +87,8 @@ export default function App() {
         return <Assets backendUrl={BACKEND_URL} key={`assets-ref-${teamRefreshKey}`} />;
       case 'team':
         return <Team backendUrl={BACKEND_URL} onTeamChange={handleTeamChange} />;
+      case 'history':
+        return <History backendUrl={BACKEND_URL} />;
       default:
         return <Dashboard backendUrl={BACKEND_URL} />;
     }
