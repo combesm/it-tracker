@@ -19,8 +19,8 @@ export default function Assets({ backendUrl }) {
   const [dateExpiration, setDateExpiration] = useState('');
   const [urls, setUrls] = useState(['']);
   const [tags, setTags] = useState('');
-  const [selectedTagFilter, setSelectedTagFilter] = useState('');
-  const [excludeFilter, setExcludeFilter] = useState(false);
+  const [filterTag, setFilterTag] = useState('');
+  const [filterMode, setFilterMode] = useState('include'); // 'include' or 'exclude'
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -218,13 +218,13 @@ export default function Assets({ backendUrl }) {
   }, [assets]);
 
   const filteredAssets = useMemo(() => {
-    if (!selectedTagFilter) return assets;
+    if (!filterTag) return assets;
     return assets.filter(asset => {
       const tList = (asset.tags || []).map(t => t.toLowerCase().trim());
-      const hasTag = tList.includes(selectedTagFilter.toLowerCase().trim());
-      return excludeFilter ? !hasTag : hasTag;
+      const isPresent = tList.includes(filterTag.toLowerCase().trim());
+      return filterMode === 'include' ? isPresent : !isPresent;
     });
-  }, [assets, selectedTagFilter, excludeFilter]);
+  }, [assets, filterTag, filterMode]);
 
   const getTagStyle = (tag) => {
     let hash = 0;
@@ -522,57 +522,60 @@ export default function Assets({ backendUrl }) {
           <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Filtrer par étiquette :</span>
           <button
             onClick={() => {
-              setSelectedTagFilter('');
-              setExcludeFilter(false);
+              setFilterTag('');
+              setFilterMode('include');
             }}
             className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
-              !selectedTagFilter
-                ? 'bg-brand-primary text-white border-brand-primary'
+              !filterTag
+                ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
                 : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
             }`}
           >
             Tous
           </button>
           {allTags.map((tag, idx) => {
-            const isSelected = selectedTagFilter === tag;
+            const isSelected = filterTag === tag;
             const style = getTagStyle(tag);
+            
+            const handleClick = () => {
+              if (filterTag === tag) {
+                if (filterMode === 'include') {
+                  setFilterMode('exclude');
+                } else {
+                  setFilterTag('');
+                  setFilterMode('include');
+                }
+              } else {
+                setFilterTag(tag);
+                setFilterMode('include');
+              }
+            };
+            
+            let btnClass = `px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer flex items-center gap-1 `;
+            if (isSelected) {
+              if (filterMode === 'include') {
+                btnClass += `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`;
+              } else {
+                btnClass += `bg-brand-bg/60 text-brand-text/35 border-brand-border/65 line-through opacity-70 hover:bg-brand-bg/80`;
+              }
+            } else {
+              btnClass += `bg-white text-brand-text border-brand-border ${style.hover}`;
+            }
+            
             return (
               <button
                 key={idx}
-                onClick={() => {
-                  setSelectedTagFilter(tag);
-                  if (selectedTagFilter !== tag) {
-                    setExcludeFilter(false);
-                  }
-                }}
-                className={`px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer ${
-                  isSelected
-                    ? `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`
-                    : `bg-white text-brand-text border-brand-border ${style.hover}`
-                }`}
+                onClick={handleClick}
+                className={btnClass}
+                title={isSelected && filterMode === 'exclude' ? "Sauf cette étiquette (cliquer pour effacer le filtre)" : isSelected ? "Cette étiquette uniquement (cliquer pour l'exclure)" : "Filtrer par cette étiquette"}
               >
+                {isSelected && filterMode === 'exclude' && (
+                  <span className="text-[10px] font-extrabold text-brand-alert/80 mr-0.5">✕</span>
+                )}
                 {tag}
               </button>
             );
           })}
-
-          {selectedTagFilter && (
-            <button
-              type="button"
-              onClick={() => setExcludeFilter(!excludeFilter)}
-              className={`ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
-                excludeFilter
-                  ? 'bg-red-50 text-red-700 border-red-200 shadow-sm'
-                  : 'bg-brand-bg text-brand-text border-brand-border hover:bg-brand-bg/85'
-              }`}
-              title="Exclure cette étiquette du filtre"
-            >
-              <svg className={`w-3.5 h-3.5 ${excludeFilter ? 'text-red-600' : 'text-brand-text/50'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-              </svg>
-              {excludeFilter ? `Tous sauf "${selectedTagFilter}"` : 'Tous sauf cette étiquette'}
-            </button>
-          )}
         </div>
       )}
 
