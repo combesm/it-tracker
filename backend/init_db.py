@@ -53,7 +53,18 @@ def init_db():
     );
     """)
 
-    # Table Alerts (avec la colonne description)
+    # Table Asset URLs (multi-sources)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS asset_urls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        is_primary INTEGER DEFAULT 0,
+        FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+    );
+    """)
+
+    # Table Alerts (avec la colonne description, trigger_url et is_secondary)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +74,8 @@ def init_db():
         link TEXT,
         pub_date TEXT,
         resolved INTEGER DEFAULT 0,
+        trigger_url TEXT,
+        is_secondary INTEGER DEFAULT 0,
         FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
     );
     """)
@@ -96,36 +109,41 @@ def init_db():
     cursor.execute("SELECT id FROM assets WHERE nom_produit = 'Metabase';")
     metabase_id = cursor.fetchone()[0]
 
+    # Insérer les URLs de test dans asset_urls
+    cursor.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, 'https://www.cert.ssi.gouv.fr/feed/', 1);", (synology_id,))
+    cursor.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, 'https://www.cert.ssi.gouv.fr/feed/', 1);", (windows_id,))
+    cursor.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, 'https://github.com/metabase/metabase/releases.atom', 1);", (metabase_id,))
+
     # Données d'alertes de test riches pour le filtrage
     alerts = [
         # Synology alerte 1 : Corrigé en 7.2.1-69057. Notre version est 7.2.1-69057. Cette alerte doit être MASQUÉE !
         (synology_id, "CERTFR-2026-AVI-0500 : Vulnérabilité dans Synology DSM", 
          "Une faille affecte Synology DSM. Versions impactées : 7.0.0-7.2.1-69056. Upgrade to version 7.2.1-69057 pour corriger.", 
-         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0500/", "2026-07-08T10:00:00Z", 0),
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0500/", "2026-07-08T10:00:00Z", 0, "https://www.cert.ssi.gouv.fr/feed/", 0),
         
         # Synology alerte 2 : Versions antérieures à 7.2.2-00000. Notre version est 7.2.1-69057. Cette alerte doit s'afficher en priorité HAUTE !
         (synology_id, "CERTFR-2026-AVI-0498 : Multiples vulnérabilités dans les produits Synology", 
          "Des failles critiques ont été identifiées. Affected Installs: versions antérieures à 7.2.2-00000.", 
-         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0498/", "2026-07-07T14:30:00Z", 0),
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0498/", "2026-07-07T14:30:00Z", 0, "https://www.cert.ssi.gouv.fr/feed/", 0),
         
         # Windows alerte 1 : Pas d'informations précises de version dans la description. Doit s'afficher en REPLI (Vérification manuelle).
         (windows_id, "CERTFR-2026-AVI-0480 : Vulnérabilités dans Microsoft Windows Server", 
          "Des vulnérabilités non spécifiées permettent l'exécution de code à distance sur les serveurs.", 
-         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0480/", "2026-07-06T09:00:00Z", 0),
+         "https://www.cert.ssi.gouv.fr/avis/CERTFR-2026-AVI-0480/", "2026-07-06T09:00:00Z", 0, "https://www.cert.ssi.gouv.fr/feed/", 0),
 
         # Metabase alerte 1 : Release v0.46.0. Notre version actuelle est 0.45.0. Doit s'afficher comme MISE À JOUR DISPONIBLE.
         (metabase_id, "v0.46.0", 
          "Nouvelle version corrective et fonctionnelle de Metabase.", 
-         "https://github.com/metabase/metabase/releases/tag/v0.46.0", "2026-07-05T12:00:00Z", 0),
+         "https://github.com/metabase/metabase/releases/tag/v0.46.0", "2026-07-05T12:00:00Z", 0, "https://github.com/metabase/metabase/releases.atom", 0),
 
         # Metabase alerte 2 : Release v0.44.0. Notre version actuelle est 0.45.0. Cette alerte doit être MASQUÉE car nous sommes déjà en version supérieure !
         (metabase_id, "v0.44.0", 
          "Version obsolète de Metabase.", 
-         "https://github.com/metabase/metabase/releases/tag/v0.44.0", "2026-07-04T12:00:00Z", 0)
+         "https://github.com/metabase/metabase/releases/tag/v0.44.0", "2026-07-04T12:00:00Z", 0, "https://github.com/metabase/metabase/releases.atom", 0)
     ]
     cursor.executemany("""
-    INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
-    VALUES (?, ?, ?, ?, ?, ?);
+    INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
     """, alerts)
 
     conn.commit()

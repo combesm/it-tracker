@@ -457,6 +457,12 @@ export default function Dashboard({ backendUrl }) {
                                         {alert.title}
                                       </h4>
                                       
+                                      {alert.is_secondary === 1 && (
+                                        <div className="text-xs text-brand-text/75 mt-1 bg-brand-alert/5 border border-brand-alert/10 px-2.5 py-1 rounded-md">
+                                          Produit : {asset.nom_produit} | Source ayant déclenché l'alerte : <a href={alert.trigger_url} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline font-semibold">{alert.trigger_url}</a>
+                                        </div>
+                                      )}
+                                      
                                       {/* Version Details Badge line */}
                                       <div className="flex flex-wrap gap-2 items-center text-xs font-medium py-1.5">
                                         <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">

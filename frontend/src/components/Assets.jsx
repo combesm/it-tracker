@@ -17,7 +17,7 @@ export default function Assets({ backendUrl }) {
   const [machineHebergement, setMachineHebergement] = useState('');
   const [typeLicence, setTypeLicence] = useState('Perpétuelle');
   const [dateExpiration, setDateExpiration] = useState('');
-  const [urlRss, setUrlRss] = useState('');
+  const [urls, setUrls] = useState(['']);
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -78,7 +78,7 @@ export default function Assets({ backendUrl }) {
     setMachineHebergement('');
     setTypeLicence('Perpétuelle');
     setDateExpiration('');
-    setUrlRss('');
+    setUrls(['']);
     setEntites(['Groupe']);
     if (team.length > 0) {
       setResponsable(team[0].trigramme);
@@ -98,7 +98,7 @@ export default function Assets({ backendUrl }) {
     setMachineHebergement(asset.machine_hebergement || '');
     setTypeLicence(asset.type_licence || 'Perpétuelle');
     setDateExpiration(asset.date_expiration || '');
-    setUrlRss(asset.url_rss || '');
+    setUrls(asset.urls && asset.urls.length > 0 ? asset.urls : [asset.url_rss || '']);
     setResponsable(asset.responsable);
     setEntites(asset.entites ? asset.entites.split(', ') : ['Groupe']);
     setErrorMessage('');
@@ -145,7 +145,8 @@ export default function Assets({ backendUrl }) {
       machine_hebergement: typeDeploiement === 'Self-hosted' ? machineHebergement.trim() : null,
       type_licence: typeLicence,
       date_expiration: typeLicence === 'Limitée' ? dateExpiration : null,
-      url_rss: urlRss.trim() || null,
+      urls: urls.map(u => u.trim()).filter(Boolean),
+      url_rss: urls.map(u => u.trim()).filter(Boolean)[0] || null,
       responsable: responsable,
       entites: entites
     };
@@ -390,17 +391,50 @@ export default function Assets({ backendUrl }) {
                 </div>
               </div>
 
-              {/* RSS URL */}
-              <div>
-                <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">
-                  URL Flux RSS (Avis de sécurité)
+              {/* URLs Flux RSS / XML Joomla (Multi-sources) */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider">
+                  Sources de flux (RSS ou XML Joomla Update Sites)
                 </label>
-                <input
-                  type="url"
-                  value={urlRss}
-                  onChange={(e) => setUrlRss(e.target.value)}
-                  className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
-                />
+                {urls.map((url, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="url"
+                      placeholder={`URL du flux ${index + 1}`}
+                      value={url}
+                      onChange={(e) => {
+                        const newUrls = [...urls];
+                        newUrls[index] = e.target.value;
+                        setUrls(newUrls);
+                      }}
+                      className="flex-1 px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                    />
+                    {urls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUrls(urls.filter((_, i) => i !== index));
+                        }}
+                        className="p-2 text-brand-alert hover:bg-brand-alert/10 rounded-lg border border-transparent hover:border-brand-alert/20 transition-all cursor-pointer"
+                        title="Supprimer cette source"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setUrls([...urls, ''])}
+                  className="mt-1 px-3 py-1.5 text-xs font-semibold text-brand-primary hover:bg-brand-primary/10 rounded-lg border border-transparent hover:border-brand-primary/20 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Ajouter une source
+                </button>
               </div>
 
               {/* Form Buttons */}
@@ -573,16 +607,20 @@ export default function Assets({ backendUrl }) {
 
                                 {/* URL RSS */}
                                 <div>
-                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">URL Flux RSS</span>
-                                  <span className="font-medium text-brand-text text-sm mt-1.5 block truncate" title={asset.url_rss}>
-                                    {asset.url_rss ? (
-                                      <a href={asset.url_rss} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">
-                                        {asset.url_rss}
-                                      </a>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Sources de flux ({asset.urls?.length || 0})</span>
+                                  <div className="mt-1.5 space-y-1">
+                                    {asset.urls && asset.urls.length > 0 ? (
+                                      asset.urls.map((url, uidx) => (
+                                        <span key={uidx} className="font-medium text-brand-text text-sm block truncate" title={url}>
+                                          <a href={url} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">
+                                            {url}
+                                          </a>
+                                        </span>
+                                      ))
                                     ) : (
-                                      <span className="text-brand-text/45">Aucun flux configuré</span>
+                                      <span className="text-brand-text/45 text-sm block">Aucun flux configuré</span>
                                     )}
-                                  </span>
+                                  </div>
                                 </div>
                               </div>
                             </td>

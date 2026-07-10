@@ -289,8 +289,16 @@ def get_assets():
         JOIN team t ON a.responsable = t.trigramme
         ORDER BY a.nom_produit ASC;
     """).fetchall()
+    
+    result = []
+    for a in assets:
+        a_dict = dict(a)
+        urls = conn.execute("SELECT url FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;", (a_dict['id'],)).fetchall()
+        a_dict['urls'] = [u['url'] for u in urls]
+        result.append(a_dict)
+        
     conn.close()
-    return jsonify([dict(a) for a in assets])
+    return jsonify(result)
 
 @app.route('/api/assets', methods=['POST'])
 def add_asset():
@@ -302,7 +310,14 @@ def add_asset():
     machine_hebergement = (data.get('machine_hebergement') or '').strip() if type_deploiement == 'Self-hosted' else None
     type_licence = data.get('type_licence') or 'Perpétuelle'
     date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
-    url_rss = (data.get('url_rss') or '').strip() or None
+    
+    # Gestion des URLs multiples
+    urls = data.get('urls', [])
+    if isinstance(urls, str):
+        urls = [urls]
+    urls = [u.strip() for u in urls if u and u.strip()]
+    url_rss = urls[0] if urls else None
+    
     responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
@@ -333,8 +348,14 @@ def add_asset():
             INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites))
-        conn.commit()
         asset_id = cursor.lastrowid
+        
+        # Insérer les URLs dans la table de jointure asset_urls
+        for idx, u in enumerate(urls):
+            is_prim = 1 if idx == 0 else 0
+            conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, ?);", (asset_id, u, is_prim))
+            
+        conn.commit()
     except Exception as e:
         conn.close()
         return jsonify({'error': f'Erreur de base de données : {str(e)}'}), 500
@@ -352,7 +373,14 @@ def update_asset(asset_id):
     machine_hebergement = (data.get('machine_hebergement') or '').strip() if type_deploiement == 'Self-hosted' else None
     type_licence = data.get('type_licence') or 'Perpétuelle'
     date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
-    url_rss = (data.get('url_rss') or '').strip() or None
+    
+    # Gestion des URLs multiples
+    urls = data.get('urls', [])
+    if isinstance(urls, str):
+        urls = [urls]
+    urls = [u.strip() for u in urls if u and u.strip()]
+    url_rss = urls[0] if urls else None
+    
     responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
@@ -385,6 +413,13 @@ def update_asset(asset_id):
                 machine_hebergement = ?, type_licence = ?, date_expiration = ?, url_rss = ?, responsable = ?, entites = ?
             WHERE id = ?;
         """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites, asset_id))
+        
+        # Mettre à jour les URLs multiples (supprimer et insérer)
+        conn.execute("DELETE FROM asset_urls WHERE asset_id = ?;", (asset_id,))
+        for idx, u in enumerate(urls):
+            is_prim = 1 if idx == 0 else 0
+            conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, ?);", (asset_id, u, is_prim))
+            
         conn.commit()
     except Exception as e:
         conn.close()
@@ -524,137 +559,197 @@ def resolve_asset_alerts(asset_id):
 @app.route('/api/alerts/refresh', methods=['POST'])
 def refresh_alerts():
     conn = get_db_connection()
-    assets = conn.execute("SELECT id, nom_produit, url_rss, version_actuelle FROM assets WHERE url_rss IS NOT NULL AND url_rss != '';").fetchall()
+    assets = conn.execute("SELECT id, nom_produit, version_actuelle FROM assets;").fetchall()
     
     unreachable_urls = []
     new_alerts_count = 0
     
     for asset in assets:
         asset_id = asset['id']
-        url = asset['url_rss']
         version_actuelle = asset['version_actuelle']
         
-        try:
-            if url.lower().startswith('file://'):
-                with urllib.request.urlopen(url, timeout=4) as response:
-                    xml_data = response.read()
-            else:
-                req = urllib.request.Request(
-                    url, 
-                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-                )
-                with urllib.request.urlopen(req, timeout=4) as response:
-                    xml_data = response.read()
-        except Exception as e:
-            print(f"Erreur de récupération de l'URL ({url}): {e}")
-            unreachable_urls.append(url)
+        # Récupérer les URLs configurées pour cet actif
+        urls_rows = conn.execute("SELECT url, is_primary FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;", (asset_id,)).fetchall()
+        
+        if not urls_rows:
             continue
-
-        # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
-        is_joomla = url.split('?')[0].lower().endswith('.xml')
-        root = None
-        if not is_joomla:
+            
+        triggered_alert = None
+        
+        for u_row in urls_rows:
+            url = u_row['url']
+            is_primary = u_row['is_primary']
+            
             try:
-                root = ET.fromstring(xml_data)
-                root_tag = root.tag.split('}')[-1]
-                if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
-                    is_joomla = True
-            except Exception:
-                pass
-
-        if is_joomla:
-            if root is None:
-                try:
-                    root = ET.fromstring(xml_data)
-                except Exception as e:
-                    print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
-                    unreachable_urls.append(url)
-                    continue
-
-            # Extraction de la version
-            def find_version_elem(elem):
-                tag = elem.tag.split('}')[-1]
-                if tag == 'version' and elem.text:
-                    return elem.text.strip()
-                for child in elem:
-                    res = find_version_elem(child)
-                    if res:
-                        return res
-                return None
-
-            xml_version = find_version_elem(root)
-            if not xml_version:
-                print(f"Aucune version trouvée dans le fichier XML Joomla ({url})")
+                if url.lower().startswith('file://'):
+                    with urllib.request.urlopen(url, timeout=4) as response:
+                        xml_data = response.read()
+                else:
+                    req = urllib.request.Request(
+                        url, 
+                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+                    )
+                    with urllib.request.urlopen(req, timeout=4) as response:
+                        xml_data = response.read()
+            except Exception as e:
+                print(f"Erreur de récupération de l'URL ({url}): {e}")
+                unreachable_urls.append(url)
                 continue
 
-            # Comparaison et Alerte
-            asset_ver = parse_version_safe(version_actuelle)
-            xml_ver = parse_version_safe(xml_version)
+            # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
+            is_joomla = url.split('?')[0].lower().endswith('.xml')
+            root = None
+            if not is_joomla:
+                try:
+                    root = ET.fromstring(xml_data)
+                    root_tag = root.tag.split('}')[-1]
+                    if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
+                        is_joomla = True
+                except Exception:
+                    pass
 
-            if xml_ver and asset_ver and xml_ver > asset_ver:
-                title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
-                
-                # Extraction de infourl si présent
-                def find_infourl_elem(elem):
+            if is_joomla:
+                if root is None:
+                    try:
+                        root = ET.fromstring(xml_data)
+                    except Exception as e:
+                        print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
+                        continue
+
+                # Extraction de la version
+                def find_version_elem(elem):
                     tag = elem.tag.split('}')[-1]
-                    if tag == 'infourl' and elem.text:
+                    if tag == 'version' and elem.text:
                         return elem.text.strip()
                     for child in elem:
-                        res = find_infourl_elem(child)
+                        res = find_version_elem(child)
                         if res:
                             return res
                     return None
 
-                xml_infourl = find_infourl_elem(root)
-                link = xml_infourl if xml_infourl else url
-                pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                xml_version = find_version_elem(root)
+                if not xml_version:
+                    continue
 
-                existing = conn.execute("""
-                    SELECT id, resolved FROM alerts 
-                    WHERE asset_id = ? AND title = ?;
-                """, (asset_id, title)).fetchone()
+                # Comparaison et Alerte
+                asset_ver = parse_version_safe(version_actuelle)
+                xml_ver = parse_version_safe(xml_version)
 
-                if not existing:
-                    description = f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}."
-                    conn.execute("""
-                        INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
-                        VALUES (?, ?, ?, ?, ?, 0);
-                    """, (asset_id, title, description, link, pub_date))
-                    new_alerts_count += 1
-                elif existing['resolved'] == 1:
-                    conn.execute("UPDATE alerts SET resolved = 0 WHERE id = ?;", (existing['id'],))
-                    new_alerts_count += 1
-            
-            continue
+                if xml_ver and asset_ver and xml_ver > asset_ver:
+                    title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
+                    
+                    # Extraction de infourl si présent
+                    def find_infourl_elem(elem):
+                        tag = elem.tag.split('}')[-1]
+                        if tag == 'infourl' and elem.text:
+                            return elem.text.strip()
+                        for child in elem:
+                            res = find_infourl_elem(child)
+                            if res:
+                                return res
+                        return None
 
-        feed_items = fetch_rss_feed(url, xml_data=xml_data)
-        if feed_items is None:
-            unreachable_urls.append(url)
-            continue
-            
-        for item in feed_items:
-            title = item['title']
-            link = item['link']
-            pub_date = item['pub_date']
-            
-            # Vérifier si l'alerte existe déjà
+                    xml_infourl = find_infourl_elem(root)
+                    link = xml_infourl if xml_infourl else url
+                    pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                    triggered_alert = {
+                        'title': title,
+                        'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
+                        'link': link,
+                        'pub_date': pub_date,
+                        'trigger_url': url,
+                        'is_secondary': 0 if is_primary else 1
+                    }
+                    break
+
+            else:
+                # RSS Feed
+                feed_items = fetch_rss_feed(url, xml_data=xml_data)
+                if feed_items is None:
+                    continue
+                    
+                for item in feed_items:
+                    title = item['title']
+                    desc = item.get('description', '')
+                    link = item['link']
+                    pub_date = item['pub_date']
+                    
+                    temp_alert = {
+                        'title': title,
+                        'description': desc,
+                        'version_actuelle': version_actuelle
+                    }
+                    status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                    
+                    if status != 'hide':
+                        triggered_alert = {
+                            'title': title,
+                            'description': desc,
+                            'link': link,
+                            'pub_date': pub_date,
+                            'trigger_url': url,
+                            'is_secondary': 0 if is_primary else 1
+                        }
+                        break
+                if triggered_alert:
+                    break
+
+        if triggered_alert:
             existing = conn.execute("""
                 SELECT id, resolved FROM alerts 
-                WHERE asset_id = ? AND (title = ? OR (link = ? AND link != ''));
-            """, (asset_id, title, link)).fetchone()
+                WHERE asset_id = ? AND resolved = 0;
+            """, (asset_id,)).fetchone()
             
-            if not existing:
-                description = item.get('description', '')
+            if existing:
                 conn.execute("""
-                    INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
-                    VALUES (?, ?, ?, ?, ?, 0);
-                """, (asset_id, title, description, link, pub_date))
-                new_alerts_count += 1
-            elif existing['resolved'] == 1:
-                # Si l'alerte existe mais était résolue, on la repasse à 0 (non résolue).
-                # Le filtrage dynamique la masquera si la version actuelle est saine.
-                conn.execute("UPDATE alerts SET resolved = 0 WHERE id = ?;", (existing['id'],))
-                new_alerts_count += 1
+                    UPDATE alerts 
+                    SET title = ?, description = ?, link = ?, pub_date = ?, trigger_url = ?, is_secondary = ?
+                    WHERE id = ?;
+                """, (
+                    triggered_alert['title'], 
+                    triggered_alert['description'], 
+                    triggered_alert['link'], 
+                    triggered_alert['pub_date'], 
+                    triggered_alert['trigger_url'], 
+                    triggered_alert['is_secondary'],
+                    existing['id']
+                ))
+            else:
+                existing_resolved = conn.execute("""
+                    SELECT id FROM alerts 
+                    WHERE asset_id = ? AND title = ? AND resolved = 1;
+                """, (asset_id, triggered_alert['title'])).fetchone()
+                
+                if existing_resolved:
+                    conn.execute("""
+                        UPDATE alerts 
+                        SET resolved = 0, description = ?, link = ?, pub_date = ?, trigger_url = ?, is_secondary = ?
+                        WHERE id = ?;
+                    """, (
+                        triggered_alert['description'], 
+                        triggered_alert['link'], 
+                        triggered_alert['pub_date'], 
+                        triggered_alert['trigger_url'], 
+                        triggered_alert['is_secondary'],
+                        existing_resolved['id']
+                    ))
+                    new_alerts_count += 1
+                else:
+                    conn.execute("DELETE FROM alerts WHERE asset_id = ? AND resolved = 0;", (asset_id,))
+                    conn.execute("""
+                        INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
+                        VALUES (?, ?, ?, ?, ?, 0, ?, ?);
+                    """, (
+                        asset_id, 
+                        triggered_alert['title'], 
+                        triggered_alert['description'], 
+                        triggered_alert['link'], 
+                        triggered_alert['pub_date'], 
+                        triggered_alert['trigger_url'], 
+                        triggered_alert['is_secondary']
+                    ))
+                    new_alerts_count += 1
                 
     conn.commit()
     
@@ -768,9 +863,10 @@ if __name__ == '__main__':
         from init_db import init_db as init_db_func
         init_db_func()
     
-    # Création incrémentale de la table update_logs
+    # Création incrémentale et migrations de la base de données
     try:
         conn = sqlite3.connect(DB_PATH)
+        # 1. Table update_logs
         conn.execute("""
         CREATE TABLE IF NOT EXISTS update_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -782,10 +878,43 @@ if __name__ == '__main__':
             FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
         );
         """)
+        
+        # 2. Table asset_urls
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS asset_urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            is_primary INTEGER DEFAULT 0,
+            FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+        );
+        """)
+
+        # 3. Migration des url_rss existantes vers asset_urls
+        cursor = conn.execute("SELECT id, url_rss FROM assets WHERE url_rss IS NOT NULL AND url_rss != '';")
+        rows = cursor.fetchall()
+        for r in rows:
+            asset_id = r[0]
+            url = r[1]
+            check = conn.execute("SELECT 1 FROM asset_urls WHERE asset_id = ? AND url = ?;", (asset_id, url)).fetchone()
+            if not check:
+                conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, 1);", (asset_id, url))
+        
+        # 4. Colonnes alerts
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN trigger_url TEXT;")
+        except sqlite3.OperationalError:
+            pass
+            
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN is_secondary INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+            
         conn.commit()
         conn.close()
-        print("Table update_logs vérifiée/créée avec succès.")
+        print("Mise à jour et migration de la base de données terminées avec succès.")
     except Exception as e:
-        print(f"Erreur lors de la création de la table update_logs : {e}")
+        print(f"Erreur lors de la mise à jour/migration de la base de données : {e}")
         
     app.run(host='0.0.0.0', port=5000, debug=True)
