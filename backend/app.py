@@ -24,6 +24,22 @@ def analyze_alert(alert):
     description = alert.get('description') or ''
     version_actuelle = alert.get('version_actuelle') or ''
     
+    # 0. Détection d'alerte de mise à jour Joomla (ex: "Mise à jour disponible : Version 2.9.71 disponible (Actuellement en 2.9.70)")
+    joomla_match = re.search(r'Mise à jour disponible\s*:\s*Version\s+([^\s]+)\s+disponible', title)
+    if joomla_match:
+        xml_ver_str = joomla_match.group(1).strip()
+        rss_ver = parse_version_safe(xml_ver_str)
+        asset_ver = parse_version_safe(version_actuelle)
+        
+        if rss_ver is None:
+            return 'show', 'manual_check', 'Vérification manuelle de la version requise', 'Non déterminée'
+        if asset_ver is None:
+            return 'show', 'manual_check', 'Vérification manuelle de la version requise', xml_ver_str
+        if rss_ver <= asset_ver:
+            return 'hide', None, None, None
+        else:
+            return 'show', 'update_available', 'Mise à jour disponible', xml_ver_str
+    
     # Masquer les alertes de pré-release (nightly, beta, alpha, rc, dev...)
     # si l'utilisateur utilise une version stable (uniquement basé sur le titre de l'alerte pour éviter
     # les faux positifs avec le texte de description comme "source", "device", etc.)
@@ -138,15 +154,20 @@ def get_db_connection():
     return conn
 
 # Helper: Parseur RSS générique et robuste
-def fetch_rss_feed(url):
+def fetch_rss_feed(url, xml_data=None):
     try:
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-        )
-        # Timeout de 4 secondes pour éviter de bloquer l'application
-        with urllib.request.urlopen(req, timeout=4) as response:
-            xml_data = response.read()
+        if xml_data is None:
+            if url.lower().startswith('file://'):
+                with urllib.request.urlopen(url, timeout=4) as response:
+                    xml_data = response.read()
+            else:
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+                )
+                # Timeout de 4 secondes pour éviter de bloquer l'application
+                with urllib.request.urlopen(req, timeout=4) as response:
+                    xml_data = response.read()
         
         root = ET.fromstring(xml_data)
         
@@ -458,6 +479,14 @@ def resolve_asset_alerts(asset_id):
                     if ver_obj:
                         parsed_versions.append((ver_obj, fixed_ver_str))
                         
+            # 3. Tenter d'extraire depuis le titre Joomla (ex: "Mise à jour disponible : Version 2.9.71 disponible")
+            joomla_match = re.search(r'Mise à jour disponible\s*:\s*Version\s+([^\s]+)\s+disponible', title)
+            if joomla_match:
+                ver_str = joomla_match.group(1).strip()
+                ver_obj = parse_version_safe(ver_str)
+                if ver_obj:
+                    parsed_versions.append((ver_obj, ver_str))
+                        
         # Prendre la version sémantique la plus élevée trouvée
         if parsed_versions:
             parsed_versions.sort(key=lambda x: x[0], reverse=True)
@@ -495,7 +524,7 @@ def resolve_asset_alerts(asset_id):
 @app.route('/api/alerts/refresh', methods=['POST'])
 def refresh_alerts():
     conn = get_db_connection()
-    assets = conn.execute("SELECT id, nom_produit, url_rss FROM assets WHERE url_rss IS NOT NULL AND url_rss != '';").fetchall()
+    assets = conn.execute("SELECT id, nom_produit, url_rss, version_actuelle FROM assets WHERE url_rss IS NOT NULL AND url_rss != '';").fetchall()
     
     unreachable_urls = []
     new_alerts_count = 0
@@ -503,8 +532,102 @@ def refresh_alerts():
     for asset in assets:
         asset_id = asset['id']
         url = asset['url_rss']
+        version_actuelle = asset['version_actuelle']
         
-        feed_items = fetch_rss_feed(url)
+        try:
+            if url.lower().startswith('file://'):
+                with urllib.request.urlopen(url, timeout=4) as response:
+                    xml_data = response.read()
+            else:
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=4) as response:
+                    xml_data = response.read()
+        except Exception as e:
+            print(f"Erreur de récupération de l'URL ({url}): {e}")
+            unreachable_urls.append(url)
+            continue
+
+        # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
+        is_joomla = url.split('?')[0].lower().endswith('.xml')
+        root = None
+        if not is_joomla:
+            try:
+                root = ET.fromstring(xml_data)
+                root_tag = root.tag.split('}')[-1]
+                if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
+                    is_joomla = True
+            except Exception:
+                pass
+
+        if is_joomla:
+            if root is None:
+                try:
+                    root = ET.fromstring(xml_data)
+                except Exception as e:
+                    print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
+                    unreachable_urls.append(url)
+                    continue
+
+            # Extraction de la version
+            def find_version_elem(elem):
+                tag = elem.tag.split('}')[-1]
+                if tag == 'version' and elem.text:
+                    return elem.text.strip()
+                for child in elem:
+                    res = find_version_elem(child)
+                    if res:
+                        return res
+                return None
+
+            xml_version = find_version_elem(root)
+            if not xml_version:
+                print(f"Aucune version trouvée dans le fichier XML Joomla ({url})")
+                continue
+
+            # Comparaison et Alerte
+            asset_ver = parse_version_safe(version_actuelle)
+            xml_ver = parse_version_safe(xml_version)
+
+            if xml_ver and asset_ver and xml_ver > asset_ver:
+                title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
+                
+                # Extraction de infourl si présent
+                def find_infourl_elem(elem):
+                    tag = elem.tag.split('}')[-1]
+                    if tag == 'infourl' and elem.text:
+                        return elem.text.strip()
+                    for child in elem:
+                        res = find_infourl_elem(child)
+                        if res:
+                            return res
+                    return None
+
+                xml_infourl = find_infourl_elem(root)
+                link = xml_infourl if xml_infourl else url
+                pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                existing = conn.execute("""
+                    SELECT id, resolved FROM alerts 
+                    WHERE asset_id = ? AND title = ?;
+                """, (asset_id, title)).fetchone()
+
+                if not existing:
+                    description = f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}."
+                    conn.execute("""
+                        INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved)
+                        VALUES (?, ?, ?, ?, ?, 0);
+                    """, (asset_id, title, description, link, pub_date))
+                    new_alerts_count += 1
+                elif existing['resolved'] == 1:
+                    conn.execute("UPDATE alerts SET resolved = 0 WHERE id = ?;", (existing['id'],))
+                    new_alerts_count += 1
+            
+            continue
+
+        feed_items = fetch_rss_feed(url, xml_data=xml_data)
         if feed_items is None:
             unreachable_urls.append(url)
             continue
