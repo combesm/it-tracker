@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 export default function Assets({ backendUrl }) {
   const [assets, setAssets] = useState([]);
@@ -18,6 +18,8 @@ export default function Assets({ backendUrl }) {
   const [typeLicence, setTypeLicence] = useState('Perpétuelle');
   const [dateExpiration, setDateExpiration] = useState('');
   const [urls, setUrls] = useState(['']);
+  const [tags, setTags] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState('');
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -79,6 +81,7 @@ export default function Assets({ backendUrl }) {
     setTypeLicence('Perpétuelle');
     setDateExpiration('');
     setUrls(['']);
+    setTags('');
     setEntites(['Groupe']);
     if (team.length > 0) {
       setResponsable(team[0].trigramme);
@@ -99,6 +102,7 @@ export default function Assets({ backendUrl }) {
     setTypeLicence(asset.type_licence || 'Perpétuelle');
     setDateExpiration(asset.date_expiration || '');
     setUrls(asset.urls && asset.urls.length > 0 ? asset.urls : [asset.url_rss || '']);
+    setTags(asset.tags ? (Array.isArray(asset.tags) ? asset.tags.join(', ') : asset.tags) : '');
     setResponsable(asset.responsable);
     setEntites(asset.entites ? asset.entites.split(', ') : ['Groupe']);
     setErrorMessage('');
@@ -147,6 +151,7 @@ export default function Assets({ backendUrl }) {
       date_expiration: typeLicence === 'Limitée' ? dateExpiration : null,
       urls: urls.map(u => u.trim()).filter(Boolean),
       url_rss: urls.map(u => u.trim()).filter(Boolean)[0] || null,
+      tags: tags,
       responsable: responsable,
       entites: entites
     };
@@ -196,6 +201,43 @@ export default function Assets({ backendUrl }) {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    assets.forEach(asset => {
+      if (asset.tags) {
+        const tList = Array.isArray(asset.tags) 
+          ? asset.tags 
+          : asset.tags.split(',').map(t => t.trim()).filter(Boolean);
+        tList.forEach(t => tagSet.add(t.toLowerCase().trim()));
+      }
+    });
+    return Array.from(tagSet).sort();
+  }, [assets]);
+
+  const filteredAssets = useMemo(() => {
+    if (!selectedTagFilter) return assets;
+    return assets.filter(asset => {
+      const tList = (asset.tags || []).map(t => t.toLowerCase().trim());
+      return tList.includes(selectedTagFilter.toLowerCase().trim());
+    });
+  }, [assets, selectedTagFilter]);
+
+  const getTagStyle = (tag) => {
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++) {
+      hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colors = [
+      { bg: 'bg-blue-50 border-blue-200 text-blue-700', hover: 'hover:bg-blue-100' },
+      { bg: 'bg-emerald-50 border-emerald-200 text-emerald-700', hover: 'hover:bg-emerald-100' },
+      { bg: 'bg-violet-50 border-violet-200 text-violet-700', hover: 'hover:bg-violet-100' },
+      { bg: 'bg-amber-50 border-amber-200 text-amber-700', hover: 'hover:bg-amber-100' },
+      { bg: 'bg-rose-50 border-rose-200 text-rose-700', hover: 'hover:bg-rose-100' },
+      { bg: 'bg-cyan-50 border-cyan-200 text-cyan-700', hover: 'hover:bg-cyan-100' }
+    ];
+    return colors[Math.abs(hash) % colors.length];
   };
 
   return (
@@ -437,6 +479,20 @@ export default function Assets({ backendUrl }) {
                 </button>
               </div>
 
+              {/* Étiquettes / Tags */}
+              <div>
+                <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">
+                  Étiquettes (tags, séparés par des virgules)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ex: joomla, extension, critique"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
+                />
+              </div>
+
               {/* Form Buttons */}
               <div className="flex items-center justify-end space-x-4 border-t border-brand-border pt-4">
                 <button
@@ -455,6 +511,40 @@ export default function Assets({ backendUrl }) {
               </div>
             </form>
           )}
+        </div>
+      )}
+
+      {/* Tag Filter Bar */}
+      {!formOpen && allTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm animate-fadeIn">
+          <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Filtrer par étiquette :</span>
+          <button
+            onClick={() => setSelectedTagFilter('')}
+            className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+              !selectedTagFilter
+                ? 'bg-brand-primary text-white border-brand-primary'
+                : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+            }`}
+          >
+            Tous
+          </button>
+          {allTags.map((tag, idx) => {
+            const isSelected = selectedTagFilter === tag;
+            const style = getTagStyle(tag);
+            return (
+              <button
+                key={idx}
+                onClick={() => setSelectedTagFilter(tag)}
+                className={`px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer ${
+                  isSelected
+                    ? `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`
+                    : `bg-white text-brand-text border-brand-border ${style.hover}`
+                }`}
+              >
+                {tag}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -487,7 +577,7 @@ export default function Assets({ backendUrl }) {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-brand-border">
-                  {assets.map((asset) => {
+                  {filteredAssets.map((asset) => {
                     const isExpanded = expandedAssetId === asset.id;
                     return (
                       <React.Fragment key={asset.id}>
@@ -512,7 +602,24 @@ export default function Assets({ backendUrl }) {
                               >
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path>
                               </svg>
-                              {asset.nom_produit}
+                              <div className="flex flex-col py-0.5">
+                                <span className="font-bold text-brand-dark">{asset.nom_produit}</span>
+                                {asset.tags && asset.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {asset.tags.map((tag, tIdx) => {
+                                      const style = getTagStyle(tag);
+                                      return (
+                                        <span 
+                                          key={tIdx} 
+                                          className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider border ${style.bg}`}
+                                        >
+                                          {tag}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                           {/* Version */}

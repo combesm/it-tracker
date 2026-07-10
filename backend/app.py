@@ -295,6 +295,7 @@ def get_assets():
         a_dict = dict(a)
         urls = conn.execute("SELECT url FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;", (a_dict['id'],)).fetchall()
         a_dict['urls'] = [u['url'] for u in urls]
+        a_dict['tags'] = [t.strip() for t in (a_dict.get('tags') or '').split(',') if t.strip()]
         result.append(a_dict)
         
     conn.close()
@@ -318,6 +319,16 @@ def add_asset():
     urls = [u.strip() for u in urls if u and u.strip()]
     url_rss = urls[0] if urls else None
     
+    # Gestion des tags
+    tags = data.get('tags', '')
+    if isinstance(tags, list):
+        tags = [t.strip() for t in tags if t and t.strip()]
+        tags = ', '.join(tags)
+    elif isinstance(tags, str):
+        tags = ', '.join([t.strip() for t in tags.split(',') if t.strip()])
+    else:
+        tags = ''
+        
     responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
@@ -345,9 +356,9 @@ def add_asset():
 
     try:
         cursor = conn.execute("""
-            INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites))
+            INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites, tags))
         asset_id = cursor.lastrowid
         
         # Insérer les URLs dans la table de jointure asset_urls
@@ -381,6 +392,16 @@ def update_asset(asset_id):
     urls = [u.strip() for u in urls if u and u.strip()]
     url_rss = urls[0] if urls else None
     
+    # Gestion des tags
+    tags = data.get('tags', '')
+    if isinstance(tags, list):
+        tags = [t.strip() for t in tags if t and t.strip()]
+        tags = ', '.join(tags)
+    elif isinstance(tags, str):
+        tags = ', '.join([t.strip() for t in tags.split(',') if t.strip()])
+    else:
+        tags = ''
+        
     responsable = (data.get('responsable') or '').strip().upper()
 
     # Gestion des entités (peut être fourni sous forme de liste ou de chaine)
@@ -410,9 +431,9 @@ def update_asset(asset_id):
         conn.execute("""
             UPDATE assets 
             SET nom_produit = ?, fournisseur = ?, version_actuelle = ?, type_deploiement = ?, 
-                machine_hebergement = ?, type_licence = ?, date_expiration = ?, url_rss = ?, responsable = ?, entites = ?
+                machine_hebergement = ?, type_licence = ?, date_expiration = ?, url_rss = ?, responsable = ?, entites = ?, tags = ?
             WHERE id = ?;
-        """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites, asset_id))
+        """, (nom_produit, fournisseur, version_actuelle, type_deploiement, machine_hebergement, type_licence, date_expiration, url_rss, responsable, entites, tags, asset_id))
         
         # Mettre à jour les URLs multiples (supprimer et insérer)
         conn.execute("DELETE FROM asset_urls WHERE asset_id = ?;", (asset_id,))
@@ -908,6 +929,12 @@ if __name__ == '__main__':
             
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN is_secondary INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+            
+        # 5. Colonne tags pour assets
+        try:
+            conn.execute("ALTER TABLE assets ADD COLUMN tags TEXT DEFAULT '';")
         except sqlite3.OperationalError:
             pass
             

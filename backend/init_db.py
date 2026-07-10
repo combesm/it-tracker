@@ -49,6 +49,7 @@ def init_db():
         url_rss TEXT,
         responsable TEXT NOT NULL,
         entites TEXT NOT NULL DEFAULT 'Groupe',
+        tags TEXT DEFAULT '',
         FOREIGN KEY(responsable) REFERENCES team(trigramme) ON DELETE RESTRICT
     );
     """)
