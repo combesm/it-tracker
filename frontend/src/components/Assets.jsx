@@ -20,6 +20,7 @@ export default function Assets({ backendUrl }) {
   const [urls, setUrls] = useState(['']);
   const [tags, setTags] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState('');
+  const [excludeFilter, setExcludeFilter] = useState(false);
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -220,9 +221,10 @@ export default function Assets({ backendUrl }) {
     if (!selectedTagFilter) return assets;
     return assets.filter(asset => {
       const tList = (asset.tags || []).map(t => t.toLowerCase().trim());
-      return tList.includes(selectedTagFilter.toLowerCase().trim());
+      const hasTag = tList.includes(selectedTagFilter.toLowerCase().trim());
+      return excludeFilter ? !hasTag : hasTag;
     });
-  }, [assets, selectedTagFilter]);
+  }, [assets, selectedTagFilter, excludeFilter]);
 
   const getTagStyle = (tag) => {
     let hash = 0;
@@ -519,7 +521,10 @@ export default function Assets({ backendUrl }) {
         <div className="flex flex-wrap items-center gap-2 bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm animate-fadeIn">
           <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Filtrer par étiquette :</span>
           <button
-            onClick={() => setSelectedTagFilter('')}
+            onClick={() => {
+              setSelectedTagFilter('');
+              setExcludeFilter(false);
+            }}
             className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
               !selectedTagFilter
                 ? 'bg-brand-primary text-white border-brand-primary'
@@ -534,7 +539,12 @@ export default function Assets({ backendUrl }) {
             return (
               <button
                 key={idx}
-                onClick={() => setSelectedTagFilter(tag)}
+                onClick={() => {
+                  setSelectedTagFilter(tag);
+                  if (selectedTagFilter !== tag) {
+                    setExcludeFilter(false);
+                  }
+                }}
                 className={`px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer ${
                   isSelected
                     ? `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`
@@ -545,6 +555,24 @@ export default function Assets({ backendUrl }) {
               </button>
             );
           })}
+
+          {selectedTagFilter && (
+            <button
+              type="button"
+              onClick={() => setExcludeFilter(!excludeFilter)}
+              className={`ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+                excludeFilter
+                  ? 'bg-red-50 text-red-700 border-red-200 shadow-sm'
+                  : 'bg-brand-bg text-brand-text border-brand-border hover:bg-brand-bg/85'
+              }`}
+              title="Exclure cette étiquette du filtre"
+            >
+              <svg className={`w-3.5 h-3.5 ${excludeFilter ? 'text-red-600' : 'text-brand-text/50'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+              {excludeFilter ? `Tous sauf "${selectedTagFilter}"` : 'Tous sauf cette étiquette'}
+            </button>
+          )}
         </div>
       )}
 
