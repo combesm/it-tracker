@@ -488,11 +488,52 @@ export default function Assets({ backendUrl }) {
                 </label>
                 <input
                   type="text"
+                  list="available-tags"
                   placeholder="ex: joomla, extension, critique"
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   className="w-full px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
                 />
+                <datalist id="available-tags">
+                  {allTags.map((t, idx) => (
+                    <option key={idx} value={t} />
+                  ))}
+                </datalist>
+                
+                {/* Clickable available tags suggestion list */}
+                {allTags.length > 0 && (
+                  <div className="mt-2">
+                    <span className="text-[10px] font-bold text-brand-dark/50 uppercase tracking-wider block mb-1">
+                      Étiquettes existantes (cliquer pour ajouter) :
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {allTags.map((t, idx) => {
+                        const currentTagsList = tags.split(',').map(item => item.trim().toLowerCase());
+                        if (currentTagsList.includes(t.toLowerCase().trim())) return null;
+                        
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              const trimmed = tags.trim();
+                              if (trimmed === '') {
+                                setTags(t);
+                              } else if (trimmed.endsWith(',')) {
+                                setTags(`${trimmed} ${t}`);
+                              } else {
+                                setTags(`${trimmed}, ${t}`);
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-bg text-brand-dark border border-brand-border/60 hover:bg-brand-primary/10 hover:text-brand-primary hover:border-brand-primary/20 transition-all cursor-pointer"
+                          >
+                            + {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Form Buttons */}
