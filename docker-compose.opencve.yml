@@ -1,0 +1,64 @@
+version: "3.4"
+
+services:
+  webserver:
+    image: opencve:latest
+    container_name: opencve-webserver
+    build:
+      context: ./opencve-docker
+      args:
+        - OPENCVE_REPOSITORY=https://github.com/opencve/opencve.git
+        - OPENCVE_VERSION=1.5.0
+    depends_on:
+      - postgres-opencve
+      - redis-opencve
+    command: webserver -b 0.0.0.0:8000
+    environment:
+      - SCRIPT_NAME=/opencve
+    volumes:
+      - ./opencve.cfg:/app/opencve.cfg:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  celery_beat:
+    image: opencve:latest
+    container_name: opencve-celery-beat
+    depends_on:
+      - webserver
+      - redis-opencve
+    command: celery-beat
+    volumes:
+      - ./opencve.cfg:/app/opencve.cfg:ro
+    restart: unless-stopped
+
+  celery_worker:
+    image: opencve:latest
+    container_name: opencve-celery-worker
+    depends_on:
+      - webserver
+      - redis-opencve
+    command: celery-worker
+    volumes:
+      - ./opencve.cfg:/app/opencve.cfg:ro
+    restart: unless-stopped
+
+  redis-opencve:
+    container_name: redis-opencve
+    image: redis:buster
+    restart: unless-stopped
+
+  postgres-opencve:
+    container_name: postgres-opencve
+    image: postgres:11
+    environment:
+      POSTGRES_USER: opencve
+      POSTGRES_PASSWORD: opencvepassword
+      POSTGRES_DB: opencve
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - opencve-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  opencve-postgres-data:
