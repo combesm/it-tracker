@@ -16,7 +16,7 @@ services:
     environment:
       - SCRIPT_NAME=/opencve
     volumes:
-      - ./opencve.cfg:/app/opencve.cfg:ro
+      - ./opencve_data/conf/opencve.cfg:/app/opencve.cfg:ro
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -29,7 +29,7 @@ services:
       - redis-opencve
     command: celery-beat
     volumes:
-      - ./opencve.cfg:/app/opencve.cfg:ro
+      - ./opencve_data/conf/opencve.cfg:/app/opencve.cfg:ro
     restart: unless-stopped
 
   celery_worker:
@@ -40,7 +40,7 @@ services:
       - redis-opencve
     command: celery-worker
     volumes:
-      - ./opencve.cfg:/app/opencve.cfg:ro
+      - ./opencve_data/conf/opencve.cfg:/app/opencve.cfg:ro
     restart: unless-stopped
 
   redis-opencve:
@@ -57,8 +57,5 @@ services:
       POSTGRES_DB: opencve
       PGDATA: /var/lib/postgresql/data
     volumes:
-      - opencve-postgres-data:/var/lib/postgresql/data
+      - ./opencve_data/db:/var/lib/postgresql/data
     restart: unless-stopped
-
-volumes:
-  opencve-postgres-data:

@@ -3,3 +3,5 @@ data/
 __pycache__/
 opencve.cfg
 opencve-docker/
+opencve_data/
+opencve_api_creds.txt

@@ -46,11 +46,16 @@ fi
 echo "-> Fixing base image EOL repositories issue in Dockerfile..."
 sed -i 's/python:3.8-slim-buster/python:3.8-slim-bullseye/g' opencve-docker/Dockerfile
 
+# Fix passlib/bcrypt compatibility crash by pinning bcrypt < 4.0.0 in Dockerfile
+echo "-> Pinning bcrypt version in Dockerfile to fix passlib bug..."
+sed -i '/RUN python3 -m pip install \/opencve\//i RUN python3 -m pip install "bcrypt<4.0.0"' opencve-docker/Dockerfile
+
 # 4. Generate local configuration if not exists
-if [ ! -f "opencve.cfg" ]; then
-    echo "-> Generating opencve.cfg with random secret key..."
+mkdir -p opencve_data/conf opencve_data/db
+if [ ! -f "opencve_data/conf/opencve.cfg" ]; then
+    echo "-> Generating opencve_data/conf/opencve.cfg with random secret key..."
     SECRET_KEY=$(openssl rand -hex 24)
-    cat <<EOF > opencve.cfg
+    cat <<EOF > opencve_data/conf/opencve.cfg
 [core]
 server_name = 192.168.0.110
 secret_key = ${SECRET_KEY}
@@ -91,7 +96,7 @@ smtp_username =
 smtp_password =
 EOF
 else
-    echo "-> opencve.cfg already exists."
+    echo "-> opencve_data/conf/opencve.cfg already exists."
 fi
 
 # 5. Build and run OpenCVE services
@@ -118,7 +123,27 @@ until docker exec opencve-webserver opencve upgrade-db &> /dev/null; do
 done
 echo "-> Database schema upgraded successfully."
 
-# 8. Start CPE/CVE data import asynchronously (runs inside the container in background)
+# 8. Create API administrator account
+if [ ! -f "opencve_api_creds.txt" ]; then
+    echo "-> Creating dedicated OpenCVE API administrator..."
+    API_USER="api_admin"
+    API_PASSWORD=$(openssl rand -hex 16)
+    
+    # Save credentials locally
+    cat <<EOF > opencve_api_creds.txt
+username: ${API_USER}
+password: ${API_PASSWORD}
+EOF
+    chmod 600 opencve_api_creds.txt
+    
+    # Execute interactive user creation non-interactively via stdin pipe
+    printf "${API_PASSWORD}\n${API_PASSWORD}\n" | docker exec -i opencve-webserver opencve create-user ${API_USER} api@opencve.local --admin
+    echo "-> API administrator created successfully. Credentials saved in opencve_api_creds.txt"
+else
+    echo "-> API credentials file opencve_api_creds.txt already exists. Skipping user creation."
+fi
+
+# 9. Start CPE/CVE data import asynchronously (runs inside the container in background)
 echo "-> Triggering background CPE/CVE data import..."
 docker exec -d opencve-webserver opencve import-data --confirm
 
