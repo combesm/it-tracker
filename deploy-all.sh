@@ -50,6 +50,10 @@ sed -i 's/python:3.8-slim-buster/python:3.8-slim-bullseye/g' opencve-docker/Dock
 echo "-> Pinning bcrypt version in Dockerfile to fix passlib bug..."
 sed -i '/RUN python3 -m pip install \/opencve\//i RUN python3 -m pip install "bcrypt<4.0.0"' opencve-docker/Dockerfile
 
+# Disable registration emails to avoid HTTP 500 when SMTP is not configured
+echo "-> Disabling Flask-User registration emails in Dockerfile..."
+python3 patch_dockerfile.py
+
 # 4. Generate local configuration if not exists
 mkdir -p opencve_data/conf opencve_data/db
 if [ ! -f "opencve_data/conf/opencve.cfg" ]; then
