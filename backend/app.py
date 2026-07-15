@@ -319,29 +319,14 @@ def fetch_opencve_feed(url):
             except Exception as e_detail:
                 print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
                 
-            # Extraction des versions vulnérables depuis raw_nvd_data
-            vulnerable_versions = []
-            raw_nvd = cve_detail.get('raw_nvd_data') or {}
-            for config in raw_nvd.get('configurations', []):
-                for node in config.get('nodes', []):
-                    for match in node.get('cpeMatch', []):
-                        if match.get('vulnerable'):
-                            criteria = match.get('criteria') or ''
-                            cpe_parts = criteria.split(':')
-                            if len(cpe_parts) >= 6:
-                                cpe_ver = cpe_parts[5]
-                                if cpe_ver not in ('*', '-'):
-                                    vulnerable_versions.append(cpe_ver)
-                            
-                            if match.get('versionEndIncluding'):
-                                vulnerable_versions.append(f"<= {match.get('versionEndIncluding')}")
-                            if match.get('versionEndExcluding'):
-                                vulnerable_versions.append(f"< {match.get('versionEndExcluding')}")
-                            if match.get('versionStartIncluding'):
-                                vulnerable_versions.append(f">= {match.get('versionStartIncluding')}")
-                            if match.get('versionStartExcluding'):
-                                vulnerable_versions.append(f"> {match.get('versionStartExcluding')}")
-
+            # Formater les versions impactées sous forme de description
+            affected_vers = []
+            vendors_dict = cve.get('vendors') or {}
+            for v_name, p_dict in vendors_dict.items():
+                for p_name, versions in p_dict.items():
+                    if isinstance(versions, list) and len(versions) > 0:
+                        affected_vers.append(f"{v_name} {p_name} ({', '.join(versions)})")
+            
             # Construire la description HTML avec les détails du score
             desc_html = ""
             if cvss_score is not None:
@@ -349,11 +334,10 @@ def fetch_opencve_feed(url):
                 desc_html += f"<p><strong>Score CVSS :</strong> <span style='font-weight: bold; color: #dc2626;'>{cvss_score}</span>{severity_label}</p>"
                 
             desc_html += f"<p>{summary}</p>"
-            if vulnerable_versions:
-                unique_vers = list(dict.fromkeys(vulnerable_versions))
+            if affected_vers:
                 desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
-                for uv in unique_vers:
-                    desc_html += f"<li>{uv}</li>"
+                for av in affected_vers:
+                    desc_html += f"<li>{av}</li>"
                 desc_html += "</ul>"
                 
             # Modifier le titre si on a un score CVSS
@@ -876,68 +860,72 @@ def refresh_alerts():
                     return None
 
                 xml_version = find_version_elem(root)
-                if xml_version:
-                    # Comparaison et Alerte
-                    asset_ver = parse_version_safe(version_actuelle)
-                    xml_ver = parse_version_safe(xml_version)
+                if not xml_version:
+                    continue
 
-                    if xml_ver and asset_ver and xml_ver > asset_ver:
-                        title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
-                        
-                        # Extraction de infourl si présent
-                        def find_infourl_elem(elem):
-                            tag = elem.tag.split('}')[-1]
-                            if tag == 'infourl' and elem.text:
-                                return elem.text.strip()
-                            for child in elem:
-                                res = find_infourl_elem(child)
-                                if res:
-                                    return res
-                            return None
+                # Comparaison et Alerte
+                asset_ver = parse_version_safe(version_actuelle)
+                xml_ver = parse_version_safe(xml_version)
 
-                        xml_infourl = find_infourl_elem(root)
-                        link = xml_infourl if xml_infourl else url
-                        pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                if xml_ver and asset_ver and xml_ver > asset_ver:
+                    title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
+                    
+                    # Extraction de infourl si présent
+                    def find_infourl_elem(elem):
+                        tag = elem.tag.split('}')[-1]
+                        if tag == 'infourl' and elem.text:
+                            return elem.text.strip()
+                        for child in elem:
+                            res = find_infourl_elem(child)
+                            if res:
+                                return res
+                        return None
 
-                        triggered_alert = {
+                    xml_infourl = find_infourl_elem(root)
+                    link = xml_infourl if xml_infourl else url
+                    pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                    triggered_alert_for_url = {
+                        'title': title,
+                        'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
+                        'link': link,
+                        'pub_date': pub_date,
+                        'trigger_url': url,
+                        'is_secondary': 0 if is_primary else 1
+                    }
+
+            else:
+                # RSS Feed
+                feed_items = fetch_rss_feed(url, xml_data=xml_data)
+                if feed_items is None:
+                    continue
+                    
+                for item in feed_items:
+                    title = item['title']
+                    desc = item.get('description', '')
+                    link = item['link']
+                    pub_date = item['pub_date']
+                    
+                    temp_alert = {
+                        'title': title,
+                        'description': desc,
+                        'version_actuelle': version_actuelle
+                    }
+                    status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                    
+                    if status != 'hide':
+                        triggered_alert_for_url = {
                             'title': title,
-                            'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
+                            'description': desc,
                             'link': link,
                             'pub_date': pub_date,
                             'trigger_url': url,
                             'is_secondary': 0 if is_primary else 1
                         }
+                        break
 
-            else:
-                # RSS Feed
-                feed_items = fetch_rss_feed(url, xml_data=xml_data)
-                if feed_items is not None:
-                    for item in feed_items:
-                        title = item['title']
-                        desc = item.get('description', '')
-                        link = item['link']
-                        pub_date = item['pub_date']
-                        
-                        temp_alert = {
-                            'title': title,
-                            'description': desc,
-                            'version_actuelle': version_actuelle
-                        }
-                        status, priority, status_text, affected_versions = analyze_alert(temp_alert)
-                        
-                        if status != 'hide':
-                            triggered_alert = {
-                                'title': title,
-                                'description': desc,
-                                'link': link,
-                                'pub_date': pub_date,
-                                'trigger_url': url,
-                                'is_secondary': 0 if is_primary else 1
-                            }
-                            break
-
-            # Persister l'alerte pour cette URL spécifique
-            if triggered_alert:
+            if triggered_alert_for_url:
+                # Gérer l'insertion ou la mise à jour pour cette URL
                 existing = conn.execute("""
                     SELECT id FROM alerts 
                     WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
@@ -949,18 +937,18 @@ def refresh_alerts():
                         SET title = ?, description = ?, link = ?, pub_date = ?, is_secondary = ?
                         WHERE id = ?;
                     """, (
-                        triggered_alert['title'], 
-                        triggered_alert['description'], 
-                        triggered_alert['link'], 
-                        triggered_alert['pub_date'], 
-                        triggered_alert['is_secondary'],
+                        triggered_alert_for_url['title'], 
+                        triggered_alert_for_url['description'], 
+                        triggered_alert_for_url['link'], 
+                        triggered_alert_for_url['pub_date'], 
+                        triggered_alert_for_url['is_secondary'],
                         existing['id']
                     ))
                 else:
                     existing_resolved = conn.execute("""
                         SELECT id FROM alerts 
                         WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
-                    """, (asset_id, url, triggered_alert['title'])).fetchone()
+                    """, (asset_id, url, triggered_alert_for_url['title'])).fetchone()
                     
                     if existing_resolved:
                         conn.execute("""
@@ -968,29 +956,28 @@ def refresh_alerts():
                             SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
                             WHERE id = ?;
                         """, (
-                            triggered_alert['description'], 
-                            triggered_alert['link'], 
-                            triggered_alert['pub_date'], 
-                            triggered_alert['is_secondary'],
+                            triggered_alert_for_url['description'], 
+                            triggered_alert_for_url['link'], 
+                            triggered_alert_for_url['pub_date'], 
+                            triggered_alert_for_url['is_secondary'],
                             existing_resolved['id']
                         ))
-                        new_alerts_count += 1
                     else:
                         conn.execute("""
                             INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
                             VALUES (?, ?, ?, ?, ?, 0, ?, ?);
                         """, (
-                            asset_id,
-                            triggered_alert['title'],
-                            triggered_alert['description'],
-                            triggered_alert['link'],
-                            triggered_alert['pub_date'],
-                            url,
-                            triggered_alert['is_secondary']
+                            asset_id, 
+                            triggered_alert_for_url['title'], 
+                            triggered_alert_for_url['description'], 
+                            triggered_alert_for_url['link'], 
+                            triggered_alert_for_url['pub_date'], 
+                            url, 
+                            triggered_alert_for_url['is_secondary']
                         ))
-                        new_alerts_count += 1
+                    new_alerts_count += 1
             else:
-                # AUTO-RESOLUTION : Si aucune alerte n'est déclenchée pour cette URL, on résout l'alerte active liée
+                # Si aucune alerte n'est déclenchée pour cette URL, on résout l'existante pour cette URL
                 conn.execute("""
                     UPDATE alerts 
                     SET resolved = 1 
