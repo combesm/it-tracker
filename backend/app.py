@@ -319,14 +319,29 @@ def fetch_opencve_feed(url):
             except Exception as e_detail:
                 print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
                 
-            # Formater les versions impactées sous forme de description
-            affected_vers = []
-            vendors_dict = cve.get('vendors') or {}
-            for v_name, p_dict in vendors_dict.items():
-                for p_name, versions in p_dict.items():
-                    if isinstance(versions, list) and len(versions) > 0:
-                        affected_vers.append(f"{v_name} {p_name} ({', '.join(versions)})")
-            
+            # Extraction des versions vulnérables depuis raw_nvd_data
+            vulnerable_versions = []
+            raw_nvd = cve_detail.get('raw_nvd_data') or {}
+            for config in raw_nvd.get('configurations', []):
+                for node in config.get('nodes', []):
+                    for match in node.get('cpeMatch', []):
+                        if match.get('vulnerable'):
+                            criteria = match.get('criteria') or ''
+                            cpe_parts = criteria.split(':')
+                            if len(cpe_parts) >= 6:
+                                cpe_ver = cpe_parts[5]
+                                if cpe_ver not in ('*', '-'):
+                                    vulnerable_versions.append(cpe_ver)
+                            
+                            if match.get('versionEndIncluding'):
+                                vulnerable_versions.append(f"<= {match.get('versionEndIncluding')}")
+                            if match.get('versionEndExcluding'):
+                                vulnerable_versions.append(f"< {match.get('versionEndExcluding')}")
+                            if match.get('versionStartIncluding'):
+                                vulnerable_versions.append(f">= {match.get('versionStartIncluding')}")
+                            if match.get('versionStartExcluding'):
+                                vulnerable_versions.append(f"> {match.get('versionStartExcluding')}")
+
             # Construire la description HTML avec les détails du score
             desc_html = ""
             if cvss_score is not None:
@@ -334,10 +349,11 @@ def fetch_opencve_feed(url):
                 desc_html += f"<p><strong>Score CVSS :</strong> <span style='font-weight: bold; color: #dc2626;'>{cvss_score}</span>{severity_label}</p>"
                 
             desc_html += f"<p>{summary}</p>"
-            if affected_vers:
+            if vulnerable_versions:
+                unique_vers = list(dict.fromkeys(vulnerable_versions))
                 desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
-                for av in affected_vers:
-                    desc_html += f"<li>{av}</li>"
+                for uv in unique_vers:
+                    desc_html += f"<li>{uv}</li>"
                 desc_html += "</ul>"
                 
             # Modifier le titre si on a un score CVSS
