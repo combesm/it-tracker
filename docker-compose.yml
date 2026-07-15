@@ -12,6 +12,7 @@ services:
       - OPENCVE_URL=${OPENCVE_URL:-http://host.docker.internal:8000}
       - OPENCVE_USER=${OPENCVE_USER:-admin}
       - OPENCVE_PASSWORD=${OPENCVE_PASSWORD:-admin}
+      - OPENCVE_HOST_HEADER=${OPENCVE_HOST_HEADER:-}
     volumes:
       # Persistance de la base de données SQLite locale sur la machine hôte
       # Les données seront stockées dans un dossier local "./data" à la racine du projet
