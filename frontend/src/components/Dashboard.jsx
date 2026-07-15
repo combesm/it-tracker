@@ -366,7 +366,8 @@ export default function Dashboard({ backendUrl }) {
                   <tr className="bg-brand-bg/50">
                     <th scope="col" className="w-12 px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider"></th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Actif</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Nombre d'alertes</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Sécurité (CVE)</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Mises à jour</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Dernière publication</th>
                     <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
                     <th scope="col" className="px-4 py-3 text-right text-xs font-bold text-brand-dark uppercase tracking-wider">Actions</th>
@@ -404,11 +405,48 @@ export default function Dashboard({ backendUrl }) {
                           <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-brand-dark">
                             {asset.nom_produit}
                           </td>
-                          {/* Nombre d'alertes */}
+                          {/* Sécurité (CVE) */}
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-brand-text">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-alert/10 text-brand-alert border border-brand-alert/20">
-                              {asset.alerts.length} alerte{asset.alerts.length > 1 ? 's' : ''}
-                            </span>
+                            {(() => {
+                              const cves = asset.alerts.filter(a => a.title.includes('CVE-') || (a.trigger_url && a.trigger_url.startsWith('opencve://')));
+                              if (cves.length > 0) {
+                                const hasCritical = cves.some(c => c.priority === 'critical' || c.priority === 'high');
+                                return (
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                    hasCritical 
+                                      ? 'bg-red-50 text-red-700 border border-red-200 animate-pulse' 
+                                      : 'bg-orange-50 text-orange-700 border border-orange-200'
+                                  }`}>
+                                    🛡️ {cves.length} vulnérabilité{cves.length > 1 ? 's' : ''}
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                                    ✓ Sain
+                                  </span>
+                                );
+                              }
+                            })()}
+                          </td>
+                          {/* Mises à jour */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-brand-text">
+                            {(() => {
+                              const updates = asset.alerts.filter(a => !a.title.includes('CVE-') && (!a.trigger_url || !a.trigger_url.startsWith('opencve://')));
+                              if (updates.length > 0) {
+                                return (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-successBg text-brand-success border border-brand-success/20">
+                                    📦 {updates.length} mise{updates.length > 1 ? 's' : ''} à jour
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-600 border border-gray-200">
+                                    ✓ À jour
+                                  </span>
+                                );
+                              }
+                            })()}
                           </td>
                           {/* Dernière publication */}
                           <td className="px-4 py-4 whitespace-nowrap text-xs font-medium text-brand-text/70">
@@ -445,70 +483,98 @@ export default function Dashboard({ backendUrl }) {
                         {/* Expandable details */}
                         {isExpanded && (
                           <tr className="bg-brand-bg/5">
-                            <td colSpan={6} className="px-8 py-4 border-t border-b border-brand-border/60">
-                              <div className="bg-white rounded-lg border border-brand-border/60 p-5 shadow-sm space-y-4 divide-y divide-brand-border/50">
-                                <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider mb-2">
-                                  Détails des alertes pour {asset.nom_produit}
-                                </span>
-                                {asset.alerts.map((alert) => (
-                                  <div key={alert.id} className="pt-4 first:pt-0 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                    <div className="space-y-1 max-w-4xl">
-                                      <h4 className="text-sm font-semibold text-brand-text leading-snug">
-                                        {alert.title}
-                                      </h4>
-                                      
-                                      {alert.is_secondary === 1 && (
-                                        <div className="text-xs text-brand-text/75 mt-1 bg-brand-alert/5 border border-brand-alert/10 px-2.5 py-1 rounded-md">
-                                          Produit : {asset.nom_produit} | Source ayant déclenché l'alerte : <a href={alert.trigger_url} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline font-semibold">{alert.trigger_url}</a>
+                            <td colSpan={7} className="px-8 py-4 border-t border-b border-brand-border/60">
+                              <div className="bg-white rounded-lg border border-brand-border/60 p-5 shadow-sm space-y-5">
+                                {(() => {
+                                  const cves = asset.alerts.filter(a => a.title.includes('CVE-') || (a.trigger_url && a.trigger_url.startsWith('opencve://')));
+                                  const updates = asset.alerts.filter(a => !a.title.includes('CVE-') && (!a.trigger_url || !a.trigger_url.startsWith('opencve://')));
+                                  
+                                  const renderAlertList = (alertList) => (
+                                    <div className="divide-y divide-brand-border/40 space-y-4">
+                                      {alertList.map((alert) => (
+                                        <div key={alert.id} className="pt-4 first:pt-0 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                          <div className="space-y-1 max-w-4xl">
+                                            <h4 className="text-sm font-semibold text-brand-text leading-snug">
+                                              {alert.title}
+                                            </h4>
+                                            
+                                            {alert.is_secondary === 1 && (
+                                              <div className="text-xs text-brand-text/75 mt-1 bg-brand-alert/5 border border-brand-alert/10 px-2.5 py-1 rounded-md">
+                                                Produit : {asset.nom_produit} | Source ayant déclenché l'alerte : <a href={alert.trigger_url} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline font-semibold">{alert.trigger_url}</a>
+                                              </div>
+                                            )}
+                                            
+                                            {/* Version Details Badge line */}
+                                            <div className="flex flex-wrap gap-2 items-center text-xs font-medium py-1.5">
+                                              <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
+                                                Votre version : <span className="font-bold text-brand-dark">{alert.version_actuelle}</span>
+                                              </span>
+                                              <span className="text-brand-text/30">|</span>
+                                              <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
+                                                Versions impactées : <span className="font-bold text-brand-dark">{alert.affected_versions || 'Non déterminée'}</span>
+                                              </span>
+                                              {alert.status_text && (
+                                                <>
+                                                  <span className="text-brand-text/30">|</span>
+                                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                                      alert.priority === 'critical'
+                                                      ? 'bg-red-600 text-white border border-red-700 font-extrabold animate-pulse shadow-xs'
+                                                      : alert.priority === 'high' 
+                                                      ? 'bg-red-50 text-red-700 border border-red-200' 
+                                                      : alert.priority === 'update_available'
+                                                      ? 'bg-brand-successBg text-brand-success border border-brand-success/20'
+                                                      : 'bg-brand-alert/10 text-brand-alert border border-brand-alert/20'
+                                                  }`}>
+                                                    {alert.status_text}
+                                                  </span>
+                                                </>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center space-x-3 text-xs text-brand-text/50">
+                                              <span>Publié le : {formatDate(alert.pub_date)}</span>
+                                              {alert.link && (
+                                                <>
+                                                  <span>&bull;</span>
+                                                  <a 
+                                                    href={alert.link} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="text-brand-primary hover:underline font-semibold"
+                                                  >
+                                                    Consulter la source
+                                                  </a>
+                                                </>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+
+                                  return (
+                                    <>
+                                      {cves.length > 0 && (
+                                        <div className="space-y-3 pb-3">
+                                          <span className="block text-[10px] font-bold text-red-600 uppercase tracking-wider">
+                                            🛡️ Vulnérabilités de Sécurité (CVE)
+                                          </span>
+                                          {renderAlertList(cves)}
                                         </div>
                                       )}
                                       
-                                      {/* Version Details Badge line */}
-                                      <div className="flex flex-wrap gap-2 items-center text-xs font-medium py-1.5">
-                                        <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
-                                          Votre version : <span className="font-bold text-brand-dark">{alert.version_actuelle}</span>
-                                        </span>
-                                        <span className="text-brand-text/30">|</span>
-                                        <span className="px-2 py-0.5 rounded bg-brand-bg border border-brand-border text-brand-dark/80 whitespace-nowrap">
-                                          Versions impactées : <span className="font-bold text-brand-dark">{alert.affected_versions || 'Non déterminée'}</span>
-                                        </span>
-                                        {alert.status_text && (
-                                          <>
-                                            <span className="text-brand-text/30">|</span>
-                                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                                alert.priority === 'critical'
-                                                ? 'bg-red-600 text-white border border-red-700 font-extrabold animate-pulse shadow-xs'
-                                                : alert.priority === 'high' 
-                                                ? 'bg-red-50 text-red-700 border border-red-200' 
-                                                : alert.priority === 'update_available'
-                                                ? 'bg-brand-successBg text-brand-success border border-brand-success/20'
-                                                : 'bg-brand-alert/10 text-brand-alert border border-brand-alert/20'
-                                            }`}>
-                                              {alert.status_text}
-                                            </span>
-                                          </>
-                                        )}
-                                      </div>
-
-                                      <div className="flex items-center space-x-3 text-xs text-brand-text/50">
-                                        <span>Publié le : {formatDate(alert.pub_date)}</span>
-                                        {alert.link && (
-                                          <>
-                                            <span>&bull;</span>
-                                            <a 
-                                              href={alert.link} 
-                                              target="_blank" 
-                                              rel="noopener noreferrer" 
-                                              className="text-brand-primary hover:underline font-semibold"
-                                            >
-                                              Consulter la source
-                                            </a>
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
+                                      {updates.length > 0 && (
+                                        <div className={`space-y-3 pt-3 ${cves.length > 0 ? 'border-t border-brand-border/40' : ''}`}>
+                                          <span className="block text-[10px] font-bold text-brand-primary uppercase tracking-wider">
+                                            📦 Mises à jour Logicielles
+                                          </span>
+                                          {renderAlertList(updates)}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </td>
                           </tr>
