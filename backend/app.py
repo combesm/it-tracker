@@ -321,11 +321,33 @@ def fetch_opencve_feed(url):
                 
             # Formater les versions impactées sous forme de description
             affected_vers = []
-            vendors_dict = cve_detail.get('vendors') or {}
-            for v_name, p_dict in vendors_dict.items():
-                for p_name, versions in p_dict.items():
-                    if isinstance(versions, list) and len(versions) > 0:
-                        affected_vers.append(f"{v_name} {p_name} ({', '.join(versions)})")
+            affected_list = cve_detail.get('affected') or []
+            for aff in affected_list:
+                aff_data = aff.get('affectedData') or []
+                for data_item in aff_data:
+                    vendor = data_item.get('vendor')
+                    product = data_item.get('product')
+                    if not vendor or not product or vendor == 'n/a' or product == 'n/a':
+                        continue
+                        
+                    versions_list = []
+                    for v_item in data_item.get('versions') or []:
+                        v_val = v_item.get('version')
+                        if v_val and v_val != 'n/a':
+                            versions_list.append(v_val)
+                            
+                    if not versions_list:
+                        for cpe_str in data_item.get('cpes') or []:
+                            cpe_parts = cpe_str.split(':')
+                            if len(cpe_parts) >= 6:
+                                cpe_ver = cpe_parts[5]
+                                if cpe_ver and cpe_ver not in ('*', '-'):
+                                    versions_list.append(cpe_ver)
+                                    
+                    if versions_list:
+                        # Dédupliquer les versions
+                        unique_vers = list(dict.fromkeys(versions_list))
+                        affected_vers.append(f"{vendor} {product} ({', '.join(unique_vers)})")
             
             # Construire la description HTML avec les détails du score
             desc_html = ""
