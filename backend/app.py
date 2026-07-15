@@ -321,7 +321,8 @@ def fetch_opencve_feed(url):
                 
             # Formater les versions impactées sous forme de description
             affected_vers = []
-            affected_list = cve_detail.get('affected') or []
+            raw_nvd = cve_detail.get('raw_nvd_data') or {}
+            affected_list = raw_nvd.get('affected') or []
             for aff in affected_list:
                 aff_data = aff.get('affectedData') or []
                 for data_item in aff_data:
