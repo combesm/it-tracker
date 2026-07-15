@@ -693,34 +693,38 @@ def refresh_alerts():
         for u_row in urls_rows:
             url = u_row['url']
             is_primary = u_row['is_primary']
+            xml_data = None
             
-            try:
-                if url.lower().startswith('file://'):
-                    with urllib.request.urlopen(url, timeout=4) as response:
-                        xml_data = response.read()
-                else:
-                    req = urllib.request.Request(
-                        url, 
-                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-                    )
-                    with urllib.request.urlopen(req, timeout=4) as response:
-                        xml_data = response.read()
-            except Exception as e:
-                print(f"Erreur de récupération de l'URL ({url}): {e}")
-                unreachable_urls.append(url)
-                continue
-
-            # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
-            is_joomla = url.split('?')[0].lower().endswith('.xml')
-            root = None
-            if not is_joomla:
+            if url.lower().startswith('opencve://'):
+                is_joomla = False
+            else:
                 try:
-                    root = ET.fromstring(xml_data)
-                    root_tag = root.tag.split('}')[-1]
-                    if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
-                        is_joomla = True
-                except Exception:
-                    pass
+                    if url.lower().startswith('file://'):
+                        with urllib.request.urlopen(url, timeout=4) as response:
+                            xml_data = response.read()
+                    else:
+                        req = urllib.request.Request(
+                            url, 
+                            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+                        )
+                        with urllib.request.urlopen(req, timeout=4) as response:
+                            xml_data = response.read()
+                except Exception as e:
+                    print(f"Erreur de récupération de l'URL ({url}): {e}")
+                    unreachable_urls.append(url)
+                    continue
+
+                # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
+                is_joomla = url.split('?')[0].lower().endswith('.xml')
+                root = None
+                if not is_joomla:
+                    try:
+                        root = ET.fromstring(xml_data)
+                        root_tag = root.tag.split('}')[-1]
+                        if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
+                            is_joomla = True
+                    except Exception:
+                        pass
 
             if is_joomla:
                 if root is None:
