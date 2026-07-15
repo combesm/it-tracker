@@ -300,29 +300,22 @@ def fetch_opencve_feed(url):
                 with urllib.request.urlopen(d_req, timeout=3) as d_resp:
                     cve_detail = json.loads(d_resp.read())
                 
-                metrics = cve_detail.get('metrics') or {}
-                # CVSS v3.1
-                v31 = metrics.get('cvssMetricV31')
-                if v31 and isinstance(v31, list) and len(v31) > 0:
-                    c_data = v31[0].get('cvssData') or {}
-                    cvss_score = c_data.get('baseScore')
-                    cvss_severity = c_data.get('baseSeverity')
+                cvss_dict = cve_detail.get('cvss') or {}
+                cvss_score = cvss_dict.get('v3')
+                if cvss_score is None:
+                    cvss_score = cvss_dict.get('v2')
                 
-                # CVSS v3.0
-                if cvss_score is None:
-                    v30 = metrics.get('cvssMetricV30')
-                    if v30 and isinstance(v30, list) and len(v30) > 0:
-                        c_data = v30[0].get('cvssData') or {}
-                        cvss_score = c_data.get('baseScore')
-                        cvss_severity = c_data.get('baseSeverity')
-                        
-                # CVSS v2
-                if cvss_score is None:
-                    v2 = metrics.get('cvssMetricV2')
-                    if v2 and isinstance(v2, list) and len(v2) > 0:
-                        c_data = v2[0].get('cvssData') or {}
-                        cvss_score = c_data.get('baseScore')
-                        cvss_severity = c_data.get('baseSeverity')
+                if cvss_score is not None:
+                    # Conversion en float au cas où
+                    cvss_score = float(cvss_score)
+                    if cvss_score >= 9.0:
+                        cvss_severity = "CRITICAL"
+                    elif cvss_score >= 7.0:
+                        cvss_severity = "HIGH"
+                    elif cvss_score >= 4.0:
+                        cvss_severity = "MEDIUM"
+                    else:
+                        cvss_severity = "LOW"
             except Exception as e_detail:
                 print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
                 
