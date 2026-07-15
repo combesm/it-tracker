@@ -436,39 +436,172 @@ export default function Assets({ backendUrl }) {
               </div>
 
               {/* URLs Flux RSS / XML Joomla (Multi-sources) */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider">
-                  Sources de flux (RSS ou XML Joomla Update Sites)
+                  Sources de flux (RSS, XML Joomla ou OpenCVE Interne)
                 </label>
-                {urls.map((url, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input
-                      type="url"
-                      placeholder={`URL du flux ${index + 1}`}
-                      value={url}
-                      onChange={(e) => {
-                        const newUrls = [...urls];
-                        newUrls[index] = e.target.value;
-                        setUrls(newUrls);
-                      }}
-                      className="flex-1 px-4 py-2 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary"
-                    />
-                    {urls.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUrls(urls.filter((_, i) => i !== index));
-                        }}
-                        className="p-2 text-brand-alert hover:bg-brand-alert/10 rounded-lg border border-transparent hover:border-brand-alert/20 transition-all cursor-pointer"
-                        title="Supprimer cette source"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
+                <div className="space-y-3">
+                  {urls.map((url, index) => {
+                    const parsed = (() => {
+                      if (url.startsWith('opencve://')) {
+                        const p = url.substring(10).split('/');
+                        if (p[0] === 'product') {
+                          return { type: 'opencve', subType: 'product', vendor: p[1] || '', product: p[2] || '' };
+                        } else {
+                          return { type: 'opencve', subType: 'vendor', vendor: p[1] || '', product: '' };
+                        }
+                      }
+                      return { type: 'standard', subType: '', vendor: '', product: '' };
+                    })();
+
+                    const handleTypeChange = (newType) => {
+                      const newUrls = [...urls];
+                      if (newType === 'opencve') {
+                        newUrls[index] = 'opencve://product//';
+                      } else {
+                        newUrls[index] = '';
+                      }
+                      setUrls(newUrls);
+                    };
+
+                    const handleSubTypeChange = (newSubType) => {
+                      const newUrls = [...urls];
+                      if (newSubType === 'product') {
+                        newUrls[index] = `opencve://product/${parsed.vendor}/`;
+                      } else {
+                        newUrls[index] = `opencve://vendor/${parsed.vendor}`;
+                      }
+                      setUrls(newUrls);
+                    };
+
+                    const handleOpenCveChange = (vendor, product) => {
+                      const newUrls = [...urls];
+                      if (parsed.subType === 'product') {
+                        newUrls[index] = `opencve://product/${vendor.trim()}/${product.trim()}`;
+                      } else {
+                        newUrls[index] = `opencve://vendor/${vendor.trim()}`;
+                      }
+                      setUrls(newUrls);
+                    };
+
+                    return (
+                      <div key={index} className="p-3.5 bg-brand-bg/10 border border-brand-border/60 rounded-xl space-y-3 shadow-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          {/* Sélecteur de type */}
+                          <div className="flex gap-1 bg-brand-bg/40 p-0.5 rounded-lg border border-brand-border/50">
+                            <button
+                              type="button"
+                              onClick={() => handleTypeChange('standard')}
+                              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                parsed.type === 'standard'
+                                  ? 'bg-white text-brand-primary shadow-xs'
+                                  : 'text-brand-dark/60 hover:text-brand-dark'
+                              }`}
+                            >
+                              🔗 Flux RSS/XML
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTypeChange('opencve')}
+                              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                parsed.type === 'opencve'
+                                  ? 'bg-white text-brand-primary shadow-xs'
+                                  : 'text-brand-dark/60 hover:text-brand-dark'
+                              }`}
+                            >
+                              🛡️ OpenCVE Interne
+                            </button>
+                          </div>
+
+                          {/* Bouton de suppression */}
+                          {urls.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUrls(urls.filter((_, i) => i !== index));
+                              }}
+                              className="p-1.5 text-brand-alert hover:bg-brand-alert/10 rounded-lg border border-transparent hover:border-brand-alert/20 transition-all cursor-pointer"
+                              title="Supprimer cette source"
+                            >
+                              <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Champs dynamiques selon le type */}
+                        {parsed.type === 'standard' ? (
+                          <input
+                            type="text"
+                            placeholder="https://exemple.com/feed.xml"
+                            value={url}
+                            onChange={(e) => {
+                              const newUrls = [...urls];
+                              newUrls[index] = e.target.value;
+                              setUrls(newUrls);
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-brand-border bg-white rounded-lg focus:outline-none focus:border-brand-primary"
+                          />
+                        ) : (
+                          <div className="space-y-3 pt-1">
+                            {/* Sélecteur de sous-type OpenCVE */}
+                            <div className="flex gap-2 items-center">
+                              <span className="text-[10px] font-bold text-brand-dark/50 uppercase tracking-wider">Filtrer par :</span>
+                              <button
+                                type="button"
+                                onClick={() => handleSubTypeChange('product')}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-all cursor-pointer ${
+                                  parsed.subType === 'product'
+                                    ? 'bg-brand-dark text-white border-brand-dark shadow-xs'
+                                    : 'bg-white text-brand-dark/70 border-brand-border hover:bg-brand-bg/40'
+                                }`}
+                              >
+                                Produit (Recommandé)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSubTypeChange('vendor')}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-all cursor-pointer ${
+                                  parsed.subType === 'vendor'
+                                    ? 'bg-brand-dark text-white border-brand-dark shadow-xs'
+                                    : 'bg-white text-brand-dark/70 border-brand-border hover:bg-brand-bg/40'
+                                }`}
+                              >
+                                Éditeur uniquement
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[9px] font-bold text-brand-dark/60 uppercase tracking-wider mb-1">Éditeur (ex: joomla)</label>
+                                <input
+                                  type="text"
+                                  placeholder="ex: rustdesk"
+                                  value={parsed.vendor}
+                                  onChange={(e) => handleOpenCveChange(e.target.value, parsed.product)}
+                                  className="w-full px-3 py-2 text-xs border border-brand-border bg-white rounded-lg focus:outline-none focus:border-brand-primary"
+                                />
+                              </div>
+                              {parsed.subType === 'product' && (
+                                <div>
+                                  <label className="block text-[9px] font-bold text-brand-dark/60 uppercase tracking-wider mb-1">Produit (ex: joomla_cve)</label>
+                                  <input
+                                    type="text"
+                                    placeholder="ex: rustdesk"
+                                    value={parsed.product}
+                                    onChange={(e) => handleOpenCveChange(parsed.vendor, e.target.value)}
+                                    className="w-full px-3 py-2 text-xs border border-brand-border bg-white rounded-lg focus:outline-none focus:border-brand-primary"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
                 <button
                   type="button"
                   onClick={() => setUrls([...urls, ''])}
