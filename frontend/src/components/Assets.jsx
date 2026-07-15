@@ -557,7 +557,7 @@ export default function Assets({ backendUrl }) {
                                     : 'bg-white text-brand-dark/70 border-brand-border hover:bg-brand-bg/40'
                                 }`}
                               >
-                                Produit (Recommandé)
+                                Product (Recommandé)
                               </button>
                               <button
                                 type="button"
@@ -568,16 +568,16 @@ export default function Assets({ backendUrl }) {
                                     : 'bg-white text-brand-dark/70 border-brand-border hover:bg-brand-bg/40'
                                 }`}
                               >
-                                Éditeur uniquement
+                                Vendor uniquement
                               </button>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <label className="block text-[9px] font-bold text-brand-dark/60 uppercase tracking-wider mb-1">Éditeur (ex: joomla)</label>
+                                <label className="block text-[9px] font-bold text-brand-dark/60 uppercase tracking-wider mb-1">Vendor</label>
                                 <input
                                   type="text"
-                                  placeholder="ex: rustdesk"
+                                  placeholder="Vendor"
                                   value={parsed.vendor}
                                   onChange={(e) => handleOpenCveChange(e.target.value, parsed.product)}
                                   className="w-full px-3 py-2 text-xs border border-brand-border bg-white rounded-lg focus:outline-none focus:border-brand-primary"
@@ -585,10 +585,10 @@ export default function Assets({ backendUrl }) {
                               </div>
                               {parsed.subType === 'product' && (
                                 <div>
-                                  <label className="block text-[9px] font-bold text-brand-dark/60 uppercase tracking-wider mb-1">Produit (ex: joomla_cve)</label>
+                                  <label className="block text-[9px] font-bold text-brand-dark/60 tracking-wider mb-1">Product</label>
                                   <input
                                     type="text"
-                                    placeholder="ex: rustdesk"
+                                    placeholder="Product"
                                     value={parsed.product}
                                     onChange={(e) => handleOpenCveChange(parsed.vendor, e.target.value)}
                                     className="w-full px-3 py-2 text-xs border border-brand-border bg-white rounded-lg focus:outline-none focus:border-brand-primary"
