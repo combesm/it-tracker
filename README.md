@@ -120,7 +120,17 @@ cd /var/www/it-tracker/
 
 ### Étape 3 : Conserver ou migrer votre historique d'inventaire
 - **Conserver l'inventaire existant** : Copiez le dossier `data/` (contenant le fichier `database.db` SQLite de l'inventaire) de l'ancien serveur vers le nouveau. Le conteneur se chargera de lire le fichier sans aucune perte de données.
-- **Conserver les données OpenCVE pré-importées** : Pour éviter de réimporter le dictionnaire d'origine (ce qui consomme de la bande passante), vous pouvez également copier le dossier `opencve_data/` sur le nouveau serveur avant de lancer le script.
+- **Conserver la base de données OpenCVE pré-importée (Hautement Recommandé)** : 
+  Pour éviter de réimporter et de retélécharger l'intégralité de l'historique du NVD depuis 2002 (ce qui prend environ 2h30 à 3h en raison des limites de débit du NIST), vous devez copier le dossier `opencve_data/` (qui pèse actuellement **environ 2,8 Go**) sur le nouveau serveur.
+  
+  **Commande de sauvegarde (archive compressée) :**
+  ```bash
+  tar -czvf opencve_backup.tar.gz opencve_data/
+  ```
+  **Commande de restauration (sur le nouveau serveur) :**
+  ```bash
+  tar -xzvf opencve_backup.tar.gz
+  ```
 
 ---
 
