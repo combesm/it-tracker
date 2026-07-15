@@ -831,6 +831,7 @@ def refresh_alerts():
             url = u_row['url']
             is_primary = u_row['is_primary']
             xml_data = None
+            triggered_alert_for_url = None
             
             if url.lower().startswith('opencve://'):
                 is_joomla = False
