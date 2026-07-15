@@ -181,6 +181,12 @@ def fetch_opencve_feed(url):
         
     try:
         req = urllib.request.Request(api_url)
+        
+        # Forcer le Host header sans le numéro de port (requis par la directive strict SERVER_NAME de Flask/OpenCVE)
+        parsed = urllib.parse.urlparse(opencve_url)
+        if parsed.hostname:
+            req.add_header('Host', parsed.hostname)
+            
         if opencve_token:
             req.add_header('Authorization', f'Bearer {opencve_token}')
         else:
