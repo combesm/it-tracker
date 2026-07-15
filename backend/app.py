@@ -321,7 +321,7 @@ def fetch_opencve_feed(url):
                 
             # Formater les versions impactées sous forme de description
             affected_vers = []
-            vendors_dict = cve.get('vendors') or {}
+            vendors_dict = cve_detail.get('vendors') or {}
             for v_name, p_dict in vendors_dict.items():
                 for p_name, versions in p_dict.items():
                     if isinstance(versions, list) and len(versions) > 0:
