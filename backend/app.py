@@ -974,11 +974,22 @@ def test_opencve_endpoint():
     opencve_password = os.getenv('OPENCVE_PASSWORD')
     opencve_host_header = os.getenv('OPENCVE_HOST_HEADER')
     
+    # Lire le code source de refresh_alerts pour diagnostic
+    code_snippet = ""
+    try:
+        app_py_path = os.path.join(os.path.dirname(__file__), 'app.py')
+        with open(app_py_path) as f:
+            lines = f.readlines()
+            code_snippet = "".join(lines[685:725])
+    except Exception as read_err:
+        code_snippet = f"Error reading app.py: {read_err}"
+
     diag = {
         'OPENCVE_URL': opencve_url,
         'OPENCVE_USER': opencve_user,
         'OPENCVE_PASSWORD_LEN': len(opencve_password) if opencve_password else 0,
         'OPENCVE_HOST_HEADER': opencve_host_header,
+        'code_snippet': code_snippet,
         'env_vars': {k: (v if 'PASSWORD' not in k else '******') for k, v in os.environ.items() if 'OPENCVE' in k or k == 'DB_PATH'}
     }
     
