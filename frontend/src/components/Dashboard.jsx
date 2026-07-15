@@ -476,7 +476,9 @@ export default function Dashboard({ backendUrl }) {
                                           <>
                                             <span className="text-brand-text/30">|</span>
                                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                              alert.priority === 'high' 
+                                                alert.priority === 'critical'
+                                                ? 'bg-red-600 text-white border border-red-700 font-extrabold animate-pulse shadow-xs'
+                                                : alert.priority === 'high' 
                                                 ? 'bg-red-50 text-red-700 border border-red-200' 
                                                 : alert.priority === 'update_available'
                                                 ? 'bg-brand-successBg text-brand-success border border-brand-success/20'

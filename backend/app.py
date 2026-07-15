@@ -27,6 +27,71 @@ def analyze_alert(alert):
     description = alert.get('description') or ''
     version_actuelle = alert.get('version_actuelle') or ''
     
+    # Détection de score CVSS dans le titre (ex: "[CVE / CVSS: 9.8] CVE-2024-25140 - ...")
+    cvss_match = re.search(r'\[CVE / CVSS:\s*(\d+(?:\.\d+)?)\]', title)
+    if cvss_match:
+        cvss_score = float(cvss_match.group(1))
+        
+        # Déterminer la priorité et le libellé de statut
+        if cvss_score >= 9.0:
+            priority = 'critical'
+            status_text = f'Vulnérabilité Critique (CVSS: {cvss_score})'
+        elif cvss_score >= 7.0:
+            priority = 'high'
+            status_text = f'Vulnérabilité Élevée (CVSS: {cvss_score})'
+        elif cvss_score >= 4.0:
+            priority = 'medium'
+            status_text = f'Vulnérabilité Moyenne (CVSS: {cvss_score})'
+        else:
+            priority = 'low'
+            status_text = f'Vulnérabilité Faible (CVSS: {cvss_score})'
+            
+        # Vérification des versions impactées
+        impacted_ver_text = "Détectée"
+        if "Versions impactées détectées :" in description:
+            impacted_matches = re.findall(r'<li>[^(]+\(([^)]+)\)</li>', description)
+            if impacted_matches:
+                impacted_ver_text = ", ".join(impacted_matches)
+                is_vulnerable = False
+                asset_ver = parse_version_safe(version_actuelle)
+                
+                for ver_spec in impacted_matches:
+                    ver_spec = ver_spec.strip()
+                    if ver_spec.startswith('<=') or ver_spec.startswith('&lt;='):
+                        v_str = ver_spec.replace('<=', '').replace('&lt;=', '').strip()
+                        v = parse_version_safe(v_str)
+                        if asset_ver and v and asset_ver <= v:
+                            is_vulnerable = True
+                    elif ver_spec.startswith('<') or ver_spec.startswith('&lt;'):
+                        v_str = ver_spec.replace('<', '').replace('&lt;', '').strip()
+                        v = parse_version_safe(v_str)
+                        if asset_ver and v and asset_ver < v:
+                            is_vulnerable = True
+                    elif ver_spec.startswith('>=') or ver_spec.startswith('&gt;='):
+                        v_str = ver_spec.replace('>=', '').replace('&gt;=', '').strip()
+                        v = parse_version_safe(v_str)
+                        if asset_ver and v and asset_ver >= v:
+                            is_vulnerable = True
+                    elif ver_spec.startswith('>') or ver_spec.startswith('&gt;'):
+                        v_str = ver_spec.replace('>', '').replace('&gt;', '').strip()
+                        v = parse_version_safe(v_str)
+                        if asset_ver and v and asset_ver > v:
+                            is_vulnerable = True
+                    else:
+                        for v_part in ver_spec.split(','):
+                            v_part = v_part.strip()
+                            if v_part == version_actuelle:
+                                is_vulnerable = True
+                            else:
+                                v = parse_version_safe(v_part)
+                                if asset_ver and v and asset_ver == v:
+                                    is_vulnerable = True
+                
+                if not is_vulnerable:
+                    return 'hide', None, None, None
+                    
+        return 'show', priority, status_text, impacted_ver_text
+
     # 0. Détection d'alerte de mise à jour Joomla (ex: "Mise à jour disponible : Version 2.9.71 disponible (Actuellement en 2.9.70)")
     joomla_match = re.search(r'Mise à jour disponible\s*:\s*Version\s+([^\s]+)\s+disponible', title)
     if joomla_match:
@@ -217,6 +282,50 @@ def fetch_opencve_feed(url):
             summary = cve.get('summary') or 'Aucun résumé fourni.'
             pub_date = cve.get('published_at') or cve.get('updated_at') or ''
             
+            # Récupérer les détails de la CVE pour avoir le score CVSS
+            cvss_score = None
+            cvss_severity = None
+            detail_url = f"{opencve_url}/api/cve/{cve_id}"
+            try:
+                d_req = urllib.request.Request(detail_url)
+                if host_val:
+                    d_req.add_header('Host', host_val)
+                if opencve_token:
+                    d_req.add_header('Authorization', f'Bearer {opencve_token}')
+                else:
+                    d_req.add_header('Authorization', f'Basic {auth_b64}')
+                d_req.add_header('User-Agent', 'herakles-it-tracker/1.0')
+                d_req.add_header('Accept', 'application/json')
+                
+                with urllib.request.urlopen(d_req, timeout=3) as d_resp:
+                    cve_detail = json.loads(d_resp.read())
+                
+                metrics = cve_detail.get('metrics') or {}
+                # CVSS v3.1
+                v31 = metrics.get('cvssMetricV31')
+                if v31 and isinstance(v31, list) and len(v31) > 0:
+                    c_data = v31[0].get('cvssData') or {}
+                    cvss_score = c_data.get('baseScore')
+                    cvss_severity = c_data.get('baseSeverity')
+                
+                # CVSS v3.0
+                if cvss_score is None:
+                    v30 = metrics.get('cvssMetricV30')
+                    if v30 and isinstance(v30, list) and len(v30) > 0:
+                        c_data = v30[0].get('cvssData') or {}
+                        cvss_score = c_data.get('baseScore')
+                        cvss_severity = c_data.get('baseSeverity')
+                        
+                # CVSS v2
+                if cvss_score is None:
+                    v2 = metrics.get('cvssMetricV2')
+                    if v2 and isinstance(v2, list) and len(v2) > 0:
+                        c_data = v2[0].get('cvssData') or {}
+                        cvss_score = c_data.get('baseScore')
+                        cvss_severity = c_data.get('baseSeverity')
+            except Exception as e_detail:
+                print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
+                
             # Formater les versions impactées sous forme de description
             affected_vers = []
             vendors_dict = cve.get('vendors') or {}
@@ -225,15 +334,27 @@ def fetch_opencve_feed(url):
                     if isinstance(versions, list) and len(versions) > 0:
                         affected_vers.append(f"{v_name} {p_name} ({', '.join(versions)})")
             
-            desc_html = f"<p>{summary}</p>"
+            # Construire la description HTML avec les détails du score
+            desc_html = ""
+            if cvss_score is not None:
+                severity_label = f" ({cvss_severity})" if cvss_severity else ""
+                desc_html += f"<p><strong>Score CVSS :</strong> <span style='font-weight: bold; color: #dc2626;'>{cvss_score}</span>{severity_label}</p>"
+                
+            desc_html += f"<p>{summary}</p>"
             if affected_vers:
                 desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
                 for av in affected_vers:
                     desc_html += f"<li>{av}</li>"
                 desc_html += "</ul>"
                 
+            # Modifier le titre si on a un score CVSS
+            if cvss_score is not None:
+                title = f"[CVE / CVSS: {cvss_score}] {cve_id} - {summary[:80]}..."
+            else:
+                title = f"{cve_id} - {summary[:80]}..."
+                
             items.append({
-                'title': f"{cve_id} - {summary[:80]}...",
+                'title': title,
                 'link': f"https://www.cve.org/CVERecord?id={cve_id}",
                 'pub_date': pub_date,
                 'description': desc_html
