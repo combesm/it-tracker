@@ -6,3 +6,4 @@ opencve-docker/
 opencve_data/
 opencve_api_creds.txt
 resume_import.py
+patch_views.py
