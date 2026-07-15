@@ -3,9 +3,12 @@ from flask_cors import CORS
 import sqlite3
 import os
 import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, date
 import re
+import json
+import base64
 from packaging.version import Version, InvalidVersion
 
 def parse_version_safe(v_str):
@@ -153,8 +156,89 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+# Helper: Récupération des vulnérabilités depuis l'API REST d'OpenCVE
+def fetch_opencve_feed(url):
+    opencve_url = os.getenv('OPENCVE_URL', 'http://host.docker.internal:8000').rstrip('/')
+    opencve_user = os.getenv('OPENCVE_USER', 'admin')
+    opencve_password = os.getenv('OPENCVE_PASSWORD', 'admin')
+    opencve_token = os.getenv('OPENCVE_TOKEN')
+    
+    # Format attendu : opencve://vendor/<vendor> ou opencve://product/<vendor>/<product>
+    path = url.replace('opencve://', '')
+    parts = [p for p in path.split('/') if p]
+    
+    if not parts:
+        return []
+        
+    api_url = f"{opencve_url}/api/cve"
+    if len(parts) >= 2 and parts[0] == 'vendor':
+        vendor = parts[1]
+        api_url += f"?vendor={urllib.parse.quote(vendor)}"
+    elif len(parts) >= 3 and parts[0] == 'product':
+        vendor = parts[1]
+        product = parts[2]
+        api_url += f"?vendor={urllib.parse.quote(vendor)}&product={urllib.parse.quote(product)}"
+        
+    try:
+        req = urllib.request.Request(api_url)
+        if opencve_token:
+            req.add_header('Authorization', f'Bearer {opencve_token}')
+        else:
+            auth_str = f"{opencve_user}:{opencve_password}"
+            auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
+            req.add_header('Authorization', f'Basic {auth_b64}')
+            
+        req.add_header('User-Agent', 'herakles-it-tracker/1.0')
+        req.add_header('Accept', 'application/json')
+        
+        with urllib.request.urlopen(req, timeout=4) as response:
+            res_data = response.read()
+            
+        cve_list = json.loads(res_data)
+        
+        results = []
+        if isinstance(cve_list, dict) and 'results' in cve_list:
+            results = cve_list['results']
+        elif isinstance(cve_list, list):
+            results = cve_list
+            
+        items = []
+        for cve in results:
+            cve_id = cve.get('id') or 'CVE-Unknown'
+            summary = cve.get('summary') or 'Aucun résumé fourni.'
+            pub_date = cve.get('published_at') or cve.get('updated_at') or ''
+            
+            # Formater les versions impactées sous forme de description
+            affected_vers = []
+            vendors_dict = cve.get('vendors') or {}
+            for v_name, p_dict in vendors_dict.items():
+                for p_name, versions in p_dict.items():
+                    if isinstance(versions, list) and len(versions) > 0:
+                        affected_vers.append(f"{v_name} {p_name} ({', '.join(versions)})")
+            
+            desc_html = f"<p>{summary}</p>"
+            if affected_vers:
+                desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
+                for av in affected_vers:
+                    desc_html += f"<li>{av}</li>"
+                desc_html += "</ul>"
+                
+            items.append({
+                'title': f"{cve_id} - {summary[:80]}...",
+                'link': f"https://www.cve.org/CVERecord?id={cve_id}",
+                'pub_date': pub_date,
+                'description': desc_html
+            })
+            
+        return items
+    except Exception as e:
+        print(f"Erreur de récupération de l'API OpenCVE ({api_url}): {e}")
+        return None
+
 # Helper: Parseur RSS générique et robuste
 def fetch_rss_feed(url, xml_data=None):
+    if url.lower().startswith('opencve://'):
+        return fetch_opencve_feed(url)
     try:
         if xml_data is None:
             if url.lower().startswith('file://'):

@@ -58,6 +58,31 @@ volumes:
 
 ---
 
+## 🔗 Intégration Native d'OpenCVE
+
+L'application intègre un connecteur natif pour OpenCVE via son API REST. Cela évite d'avoir à gérer manuellement des fichiers ou des flux RSS de tierces parties.
+
+### 1. Configurer les identifiants d'API
+Ouvrez le fichier `docker-compose.yml` et configurez vos accès de connexion OpenCVE sous la section `environment` :
+```yaml
+environment:
+  - OPENCVE_URL=http://host.docker.internal:8000
+  - OPENCVE_USER=votre_utilisateur
+  - OPENCVE_PASSWORD=votre_mot_de_passe
+```
+*(L'hôte `host.docker.internal` redirige automatiquement les requêtes vers l'IP de votre machine hôte/VM depuis le conteneur Docker).*
+
+### 2. Configurer les URLs personnalisées dans IT-Tracker
+Dans l'onglet **Actifs & Services**, créez ou modifiez un actif et saisissez une URL au format personnalisé suivant dans le champ **URL de flux RSS** :
+- **Filtrer par vendeur (Vendor)** :
+  `opencve://vendor/<nom_du_vendeur>` (ex: `opencve://vendor/joomla`)
+- **Filtrer par produit (Product)** :
+  `opencve://product/<nom_du_vendeur>/<nom_du_produit>` (ex: `opencve://product/rustdesk/rustdesk`)
+
+Lors de la synchronisation, l'IT-Tracker interrogera automatiquement l'API locale d'OpenCVE pour récupérer les CVEs, extraire les versions vulnérables et appliquer son filtrage sémantique intelligent !
+
+---
+
 ## 💻 Méthode 2 : Lancement en local (sans Docker)
 
 Cette méthode est utile pour le développement.

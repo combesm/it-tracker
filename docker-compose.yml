@@ -9,6 +9,9 @@ services:
     environment:
       - FLASK_ENV=production
       - DB_PATH=/app/backend/data/database.db
+      - OPENCVE_URL=http://host.docker.internal:8000
+      - OPENCVE_USER=admin
+      - OPENCVE_PASSWORD=admin
     volumes:
       # Persistance de la base de données SQLite locale sur la machine hôte
       # Les données seront stockées dans un dossier local "./data" à la racine du projet
