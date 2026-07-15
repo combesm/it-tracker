@@ -54,6 +54,13 @@ sed -i '/RUN python3 -m pip install \/opencve\//i RUN python3 -m pip install "bc
 echo "-> Disabling Flask-User registration emails in Dockerfile..."
 python3 patch_dockerfile.py
 
+# Detect primary IP address or fallback to localhost
+PRIMARY_IP=$(hostname -I | awk '{print $1}')
+if [ -z "$PRIMARY_IP" ]; then
+    PRIMARY_IP="localhost"
+fi
+echo "-> Detected primary IP: $PRIMARY_IP"
+
 # 4. Generate local configuration if not exists
 mkdir -p opencve_data/conf opencve_data/db
 if [ ! -f "opencve_data/conf/opencve.cfg" ]; then
@@ -61,7 +68,7 @@ if [ ! -f "opencve_data/conf/opencve.cfg" ]; then
     SECRET_KEY=$(openssl rand -hex 24)
     cat <<EOF > opencve_data/conf/opencve.cfg
 [core]
-server_name = 192.168.0.110
+server_name = ${PRIMARY_IP}
 secret_key = ${SECRET_KEY}
 database_uri = postgresql://opencve:opencvepassword@postgres-opencve:5432/opencve
 celery_broker_url = redis://redis-opencve:6379/0
@@ -145,7 +152,19 @@ EOF
     echo "-> API administrator created successfully. Credentials saved in opencve_api_creds.txt"
 else
     echo "-> API credentials file opencve_api_creds.txt already exists. Skipping user creation."
+    API_USER=$(grep "username:" opencve_api_creds.txt | awk '{print $2}')
+    API_PASSWORD=$(grep "password:" opencve_api_creds.txt | awk '{print $2}')
 fi
+
+# Automatically write/update .env file
+echo "-> Configuring/Updating .env file with OpenCVE credentials..."
+cat <<EOF > .env
+# Informations de connexion OpenCVE pour l'IT-Tracker
+OPENCVE_URL=http://opencve-webserver:8000/opencve
+OPENCVE_USER=${API_USER}
+OPENCVE_PASSWORD=${API_PASSWORD}
+OPENCVE_HOST_HEADER=${PRIMARY_IP}
+EOF
 
 # 9. Start CPE/CVE data import asynchronously (runs inside the container in background)
 echo "-> Triggering background CPE/CVE data import..."
@@ -153,8 +172,8 @@ docker exec -d opencve-webserver opencve import-data --confirm
 
 echo "=========================================================="
 echo "   Deployment Complete!"
-echo "   - Inventory App: http://192.168.0.110/"
-echo "   - OpenCVE: http://192.168.0.110/opencve/"
+echo "   - Inventory App: http://${PRIMARY_IP}/"
+echo "   - OpenCVE: http://${PRIMARY_IP}/opencve/"
 echo "=========================================================="
 echo "   To view import logs run: docker logs -f opencve-webserver"
 echo "=========================================================="

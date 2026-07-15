@@ -1,122 +1,143 @@
-# Herakles IT Tracker - Inventaire & Suivi des Vulnérabilités
+# 🛡️ Herakles IT Tracker & OpenCVE - Guide de Déploiement et d'Administration
 
-Cette application Single Page (SPA) permet de suivre l'inventaire informatique (logiciels, OS, serveurs, licences) d'une PME et de surveiller en temps réel les vulnérabilités de sécurité associées grâce aux flux RSS de sécurité (CERT-FR et flux configurés par actif).
+Bienvenue dans le guide complet d'installation, de configuration et d'administration de la suite **Herakles IT Tracker** et de son connecteur de sécurité natif **OpenCVE**.
 
-L'interface est conforme à la charte graphique Herakles (mode clair épuré, bleu corporate, sans émoji). Elle propose l'export Excel multi-onglets complet de toutes les données et gère l'historique des changements de version lors de la résolution d'alertes.
+Ce document explique en détail l'architecture, la configuration de l'environnement, le fonctionnement d'OpenCVE, la gestion des secrets et fournit une **analyse complète de la portabilité** pour installer ce système sur n'importe quel autre serveur.
 
 ---
 
-## 🐋 Méthode 1 : Déploiement avec Docker & Docker Compose (Recommandée)
+## 🏗️ Architecture Globale & Portabilité
 
-Cette méthode est idéale pour la production ou la recette. Elle encapsule l'application dans un conteneur et gère automatiquement la persistance des données.
+La suite est orchestrée sous forme de conteneurs Docker reliés par un réseau virtuel commun, le tout exposé de manière sécurisée et unifiée par un proxy inverse **Nginx** localisé sur la machine hôte.
+
+```mermaid
+graph TD
+    Client[Navigateur Web de l'Administrateur] -->|Port 80| NginxHost[Nginx Proxy Hôte]
+    NginxHost -->|/| ITTracker[Conteneur IT Tracker : Flask & React]
+    NginxHost -->|/opencve| OpenCVEWeb[Conteneur OpenCVE Webserver]
+    ITTracker -->|API REST local| OpenCVEWeb
+    OpenCVEWeb -->|Celery Workers| CeleryWorker[OpenCVE Celery Worker]
+    OpenCVEWeb -->|Celery Beat| CeleryBeat[OpenCVE Celery Beat]
+    OpenCVEWeb -->|Stockage DB| Postgres[PostgreSQL OpenCVE]
+    OpenCVEWeb -->|Cache/Brokers| Redis[Redis OpenCVE]
+    ITTracker -->|Persistant Bind Mount| SQLite[(database.db sur Hôte)]
+```
+
+### 📋 Portabilité de la solution
+Le projet a été spécialement conçu pour être **100 % portable** et prêt pour un déploiement instantané sur n'importe quel autre serveur Linux (Ubuntu, Debian, CentOS, etc.) :
+1. **IP Dynamique** : Le script de déploiement `deploy-all.sh` détecte automatiquement l'adresse IP publique de la machine hôte pour configurer le fichier de configuration d'OpenCVE.
+2. **Reverse Proxy Nginx Universel** : Le fichier `nginx-opencve.conf` utilise un nom de serveur générique (`server_name _`), ce qui signifie qu'il accepte toutes les requêtes arrivant sur le port 80 du serveur, peu importe son adresse IP ou son nom de domaine DNS.
+3. **Contournement STRICT_HOSTS** : OpenCVE s'exécute sous Django qui bloque par défaut les requêtes HTTP si l'en-tête `Host` ne correspond pas à sa configuration interne. Le backend d'IT-Tracker contourne automatiquement cette sécurité grâce à la variable `OPENCVE_HOST_HEADER` qui injecte l'en-tête de Host valide lors de chaque requête API locale.
+
+---
+
+## 🚀 Installation Complète en Une Étape (Recommandée)
+
+Le script de déploiement automatique configure l'intégralité de la pile : installation de Nginx hôte, téléchargement et construction d'OpenCVE, génération des clés de chiffrement et des comptes API, et démarrage des conteneurs.
 
 ### Prérequis
-- **Docker** installé sur votre machine.
-- **Docker Compose** (souvent inclus avec Docker Desktop ou sous forme de plugin `docker-compose`).
+- Un serveur sous **Linux** (Debian/Ubuntu recommandé).
+- **Docker** et le plugin **Docker Compose** installés.
+- Les droits `sudo` activés pour configurer Nginx.
 
-### Étapes d'installation
-
-1. **Cloner ou se positionner dans le répertoire du projet** :
-   ```bash
-   cd /home/rustdesk-host/IT-TRACKER
-   ```
-
-2. **Démarrer l'application avec Docker Compose** :
-   ```bash
-   docker compose up -d --build
-   ```
-   *Le drapeau `--build` force la compilation du frontend React et du serveur Flask lors du premier lancement. Le drapeau `-d` exécute le conteneur en arrière-plan.*
-
-3. **Accéder à l'application** :
-   Ouvrez votre navigateur web et rendez-vous sur :
-   👉 **[http://localhost:5000](http://localhost:5000)**
-
-### 💾 Persistance des données (Base de données SQLite)
-Le fichier `docker-compose.yml` est configuré avec un **volume Docker bind-mount** :
-```yaml
-volumes:
-  - ./data:/app/backend/data
+### Déploiement :
+Exécutez simplement la commande suivante à la racine du dossier du projet :
+```bash
+./deploy-all.sh
 ```
-- Lors du démarrage, Docker crée automatiquement un dossier `./data/` à la racine du projet sur la machine hôte.
-- Le fichier SQLite de la base de données (`database.db`) y est stocké de manière persistante.
-- **Sécurité** : Vous pouvez arrêter, supprimer, reconstruire ou mettre à jour le conteneur Docker à tout moment sans **jamais perdre vos données**. La base de données reste saine sur le disque dur de la machine hôte.
-
-### Commandes utiles pour Docker
-
-- **Arrêter l'application** :
-  ```bash
-  docker compose down
-  ```
-- **Consulter les logs en temps réel** :
-  ```bash
-  docker compose logs -f
-  ```
-- **Réinitialiser la base de données avec les données de test (jeu d'essai Herakles)** :
-  ```bash
-  docker compose exec it-tracker python backend/init_db.py
-  ```
 
 ---
 
-## 🔗 Intégration Native d'OpenCVE
+## 🔐 Gestion des Secrets & Fichier `.env`
 
-L'application intègre un connecteur natif pour OpenCVE via son API REST. Cela évite d'avoir à gérer manuellement des fichiers ou des flux RSS de tierces parties.
+Le backend de l'IT-Tracker a besoin des identifiants API d'OpenCVE pour s'y connecter de manière sécurisée. Ces accès sont configurés dans le fichier `.env` situé à la racine du projet.
 
-### 1. Configurer les identifiants d'API
-Ouvrez le fichier `docker-compose.yml` et configurez vos accès de connexion OpenCVE sous la section `environment` :
-```yaml
-environment:
-  - OPENCVE_URL=http://host.docker.internal:8000
-  - OPENCVE_USER=votre_utilisateur
-  - OPENCVE_PASSWORD=votre_mot_de_passe
+### Fichier `.env` type :
+```ini
+# Informations de connexion OpenCVE pour l'IT-Tracker
+OPENCVE_URL=http://opencve-webserver:8000/opencve
+OPENCVE_USER=api_admin
+OPENCVE_PASSWORD=<mot_de_passe_généré>
+OPENCVE_HOST_HEADER=<adresse_ip_du_serveur>
 ```
-*(L'hôte `host.docker.internal` redirige automatiquement les requêtes vers l'IP de votre machine hôte/VM depuis le conteneur Docker).*
 
-### 2. Configurer les URLs personnalisées dans IT-Tracker
-Dans l'onglet **Actifs & Services**, créez ou modifiez un actif et saisissez une URL au format personnalisé suivant dans le champ **URL de flux RSS** :
-- **Filtrer par vendeur (Vendor)** :
-  `opencve://vendor/<nom_du_vendeur>` (ex: `opencve://vendor/joomla`)
-- **Filtrer par produit (Product)** :
-  `opencve://product/<nom_du_vendeur>/<nom_du_produit>` (ex: `opencve://product/rustdesk/rustdesk`)
+### 🔑 Comment récupérer ou réinitialiser les secrets OpenCVE ?
 
-Lors de la synchronisation, l'IT-Tracker interrogera automatiquement l'API locale d'OpenCVE pour récupérer les CVEs, extraire les versions vulnérables et appliquer son filtrage sémantique intelligent !
+1. **À la première installation** :
+   Le script `deploy-all.sh` génère automatiquement un mot de passe sécurisé aléatoire de 32 caractères pour l'utilisateur API administrateur (`api_admin`).
+   - Il sauvegarde ces identifiants dans un fichier sécurisé nommé **`opencve_api_creds.txt`** à la racine du projet.
+   - Il remplit automatiquement le fichier `.env` avec ces informations d'accès. Vous n'avez rien à faire !
+
+2. **Lecture manuelle des secrets** :
+   Si vous devez reconnecter manuellement le backend ou récupérer le mot de passe, lisez le fichier d'identification :
+   ```bash
+   cat opencve_api_creds.txt
+   ```
+
+3. **Génération manuelle d'un nouvel utilisateur dans OpenCVE** :
+   Si vous égarez les identifiants ou souhaitez créer un autre administrateur, utilisez la CLI d'OpenCVE embarquée dans le conteneur Docker :
+   ```bash
+   docker exec -it opencve-webserver opencve create-user <nom_utilisateur> <email> --admin
+   ```
+   *Le conteneur vous demandera de saisir et de confirmer le nouveau mot de passe de manière sécurisée.*
 
 ---
 
-## 💻 Méthode 2 : Lancement en local (sans Docker)
+## ⚙️ Détail de la Configuration d'OpenCVE
 
-Cette méthode est utile pour le développement.
+L'ensemble des données d'OpenCVE est stocké de manière isolée pour éviter toute interférence :
 
-### Prérequis
-- **Python 3.12+**
-- **Node.js 20+** et **npm**
-
-### Étapes d'installation
-
-1. **Compiler le frontend React** :
-   ```bash
-   cd frontend
-   npm install
-   npm run build
-   cd ..
-   ```
-
-2. **Initialiser la base de données de test SQLite** (si non existante) :
-   ```bash
-   source venv/bin/activate
-   python backend/init_db.py
-   ```
-
-3. **Lancer l'application via le script de démarrage** :
-   ```bash
-   ./start.sh
-   ```
-   *Ce script active automatiquement l'environnement virtuel Python et démarre le serveur Flask sur [http://localhost:5000](http://localhost:5000).*
+- **Fichier de configuration principal** : `opencve_data/conf/opencve.cfg`
+  Contient la clé secrète de session, les URL de base de données PostgreSQL, le broker Redis et les paramètres système. Il est monté en lecture seule dans les conteneurs OpenCVE.
+- **Base de données PostgreSQL** : Les données CVE, utilisateurs et sessions d'OpenCVE sont écrites dans le volume persistant `./opencve_data/db`.
+- **Importation initiale des données CVE** :
+  À la fin du script `deploy-all.sh`, OpenCVE lance l'importation de l'intégralité du dictionnaire CPE et CVE (depuis les flux officiels NVD du NIST). Cette tâche tourne en tâche de fond dans le conteneur et prend du temps (environ 30 à 45 minutes selon les performances CPU/Réseau).
+  - Pour voir l'avancement de l'importation :
+    ```bash
+    docker logs -f opencve-webserver
+    ```
 
 ---
 
-## 🛠️ Architecture Technique
-- **Frontend** : React, Vite, Tailwind CSS v4, SheetJS (export Excel côté client).
-- **Backend** : Python Flask, parseur RSS asynchrone, analyseur sémantique de versions (`packaging.version`), expressions régulières pour plages de vulnérabilités.
-- **Base de données** : SQLite locale (`database.db`).
-- **Logs de mise à jour** : Table SQL `update_logs` stockant l'évolution des versions de l'inventaire lors des résolutions.
+## 🔀 Migration / Déploiement sur un autre serveur (Portabilité)
+
+Si vous devez transférer ou installer l'IT-Tracker sur un serveur physique ou virtuel tiers, suivez ces étapes simples :
+
+### Étape 1 : Copier le projet sur le nouveau serveur
+Archivez et transférez l'intégralité du répertoire du projet (par exemple via rsync ou scp) :
+```bash
+rsync -avz --exclude="venv" --exclude="node-env" --exclude="node_modules" /home/rustdesk-host/IT-TRACKER/ user@nouveau-serveur:/var/www/it-tracker/
+```
+
+### Étape 2 : Lancer le script d'installation automatique
+Sur le nouveau serveur, lancez simplement :
+```bash
+cd /var/www/it-tracker/
+./deploy-all.sh
+```
+> [!NOTE]
+> Le script détectera la nouvelle IP, re-générera un fichier `opencve.cfg` adapté, et mettra automatiquement à jour le fichier `.env` avec la nouvelle adresse IP pour `OPENCVE_HOST_HEADER`.
+
+### Étape 3 : Conserver ou migrer votre historique d'inventaire
+- **Conserver l'inventaire existant** : Copiez le dossier `data/` (contenant le fichier `database.db` SQLite de l'inventaire) de l'ancien serveur vers le nouveau. Le conteneur se chargera de lire le fichier sans aucune perte de données.
+- **Conserver les données OpenCVE pré-importées** : Pour éviter de réimporter le dictionnaire d'origine (ce qui consomme de la bande passante), vous pouvez également copier le dossier `opencve_data/` sur le nouveau serveur avant de lancer le script.
+
+---
+
+## 🛠️ Commandes utiles pour l'Exploitation
+
+*   **Démarrer/Reconstruire l'IT-Tracker** :
+    ```bash
+    docker compose up -d --build --force-recreate
+    ```
+*   **Consulter les logs de l'IT-Tracker** :
+    ```bash
+    docker compose logs -f it-tracker
+    ```
+*   **Forcer une resynchronisation immédiate de l'inventaire (Backend)** :
+    ```bash
+    curl -X POST http://localhost:5000/api/alerts/refresh
+    ```
+*   **Accès aux interfaces web** :
+    - **IT-Tracker** : `http://<IP_DU_SERVEUR>/`
+    - **Console OpenCVE** : `http://<IP_DU_SERVEUR>/opencve/`
