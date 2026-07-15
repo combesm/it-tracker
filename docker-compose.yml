@@ -13,4 +13,6 @@ services:
       # Persistance de la base de données SQLite locale sur la machine hôte
       # Les données seront stockées dans un dossier local "./data" à la racine du projet
       - ./data:/app/backend/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: always
