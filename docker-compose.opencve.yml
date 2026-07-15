@@ -12,7 +12,7 @@ services:
     depends_on:
       - postgres-opencve
       - redis-opencve
-    command: webserver -b 0.0.0.0:8000
+    command: webserver -b 0.0.0.0:8000 --env SCRIPT_NAME=/opencve
     environment:
       - SCRIPT_NAME=/opencve
     volumes:
