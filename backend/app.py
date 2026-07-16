@@ -57,7 +57,15 @@ def analyze_alert(alert):
                 
                 for ver_spec in impacted_matches:
                     ver_spec = ver_spec.strip()
-                    if ver_spec.startswith('<=') or ver_spec.startswith('&lt;='):
+                    match_hyphen = re.match(r'^([^-]+)\s*-\s*([^-]+)$', ver_spec)
+                    if match_hyphen:
+                        v_min_str = match_hyphen.group(1).strip()
+                        v_max_str = match_hyphen.group(2).strip()
+                        v_min = parse_version_safe(v_min_str)
+                        v_max = parse_version_safe(v_max_str)
+                        if asset_ver and v_min and v_max and v_min <= asset_ver <= v_max:
+                            is_vulnerable = True
+                    elif ver_spec.startswith('<=') or ver_spec.startswith('&lt;='):
                         v_str = ver_spec.replace('<=', '').replace('&lt;=', '').strip()
                         v = parse_version_safe(v_str)
                         if asset_ver and v and asset_ver <= v:
