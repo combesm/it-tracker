@@ -603,14 +603,14 @@ export default function Dashboard({ backendUrl }) {
           <button
             onClick={fetchCertAlerts}
             disabled={loadingCert}
-            className={`px-4 py-2 text-xs font-semibold rounded-lg bg-brand-primary text-white hover:bg-brand-primary/95 transition-all flex items-center shadow-sm ${
-              loadingCert ? 'opacity-70 cursor-not-allowed' : ''
+            className={`p-1.5 text-brand-text/50 hover:text-brand-primary rounded-lg hover:bg-brand-bg transition-colors ${
+              loadingCert ? 'opacity-50 cursor-not-allowed' : ''
             }`}
+            title="Actualiser les alertes CERT-FR"
           >
-            <svg className={`w-4 h-4 mr-2 ${loadingCert ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17.5M15 11l-3 3-3-3"></path>
+            <svg className={`w-4 h-4 ${loadingCert ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
             </svg>
-            {loadingCert ? 'Chargement...' : 'Actualiser'}
           </button>
         </div>
 
