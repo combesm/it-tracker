@@ -978,13 +978,12 @@ def refresh_alerts():
         if not urls_rows:
             continue
             
-        triggered_alert = None
+        triggered_alerts = []
         
         for u_row in urls_rows:
             url = u_row['url']
             is_primary = u_row['is_primary']
             xml_data = None
-            triggered_alert_for_url = None
             
             if url.lower().startswith('opencve://'):
                 is_joomla = False
@@ -1070,96 +1069,83 @@ def refresh_alerts():
                         'trigger_url': url,
                         'is_secondary': 0 if is_primary else 1
                     }
+                    triggered_alerts.append(triggered_alert_for_url)
 
             else:
                 # RSS Feed
                 feed_items = fetch_rss_feed(url, xml_data=xml_data)
-                if feed_items is None:
-                    continue
-                    
-                for item in feed_items:
-                    title = item['title']
-                    desc = item.get('description', '')
-                    link = item['link']
-                    pub_date = item['pub_date']
-                    
-                    temp_alert = {
-                        'title': title,
-                        'description': desc,
-                        'version_actuelle': version_actuelle
-                    }
-                    status, priority, status_text, affected_versions = analyze_alert(temp_alert)
-                    
-                    if status != 'hide':
-                        triggered_alert_for_url = {
+                if feed_items is not None:
+                    for item in feed_items:
+                        title = item['title']
+                        desc = item.get('description', '')
+                        link = item['link']
+                        pub_date = item['pub_date']
+                        
+                        temp_alert = {
                             'title': title,
                             'description': desc,
-                            'link': link,
-                            'pub_date': pub_date,
-                            'trigger_url': url,
-                            'is_secondary': 0 if is_primary else 1
+                            'version_actuelle': version_actuelle
                         }
-                        break
+                        status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                        
+                        if status != 'hide':
+                            triggered_alerts.append({
+                                'title': title,
+                                'description': desc,
+                                'link': link,
+                                'pub_date': pub_date,
+                                'trigger_url': url,
+                                'is_secondary': 0 if is_primary else 1
+                            })
 
-            if triggered_alert_for_url:
-                # Gérer l'insertion ou la mise à jour pour cette URL
-                existing = conn.execute("""
-                    SELECT id FROM alerts 
-                    WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
-                """, (asset_id, url)).fetchone()
-                
-                if existing:
-                    conn.execute("""
-                        UPDATE alerts 
-                        SET title = ?, description = ?, link = ?, pub_date = ?, is_secondary = ?
-                        WHERE id = ?;
-                    """, (
-                        triggered_alert_for_url['title'], 
-                        triggered_alert_for_url['description'], 
-                        triggered_alert_for_url['link'], 
-                        triggered_alert_for_url['pub_date'], 
-                        triggered_alert_for_url['is_secondary'],
-                        existing['id']
-                    ))
-                else:
-                    existing_resolved = conn.execute("""
-                        SELECT id FROM alerts 
-                        WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
-                    """, (asset_id, url, triggered_alert_for_url['title'])).fetchone()
-                    
-                    if existing_resolved:
-                        conn.execute("""
-                            UPDATE alerts 
-                            SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
-                            WHERE id = ?;
-                        """, (
-                            triggered_alert_for_url['description'], 
-                            triggered_alert_for_url['link'], 
-                            triggered_alert_for_url['pub_date'], 
-                            triggered_alert_for_url['is_secondary'],
-                            existing_resolved['id']
-                        ))
-                    else:
-                        conn.execute("""
-                            INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
-                            VALUES (?, ?, ?, ?, ?, 0, ?, ?);
-                        """, (
-                            asset_id, 
-                            triggered_alert_for_url['title'], 
-                            triggered_alert_for_url['description'], 
-                            triggered_alert_for_url['link'], 
-                            triggered_alert_for_url['pub_date'], 
-                            url, 
-                            triggered_alert_for_url['is_secondary']
-                        ))
-                    new_alerts_count += 1
-            else:
-                # Si aucune alerte n'est déclenchée pour cette URL, on résout l'existante pour cette URL
+            # Gérer l'insertion, la mise à jour et la résolution des alertes pour cette URL
+            active_titles = {a['title'] for a in triggered_alerts}
+            
+            if not active_titles:
                 conn.execute("""
                     UPDATE alerts 
                     SET resolved = 1 
                     WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
                 """, (asset_id, url))
+            else:
+                placeholders = ', '.join('?' for _ in active_titles)
+                query = f"""
+                    UPDATE alerts 
+                    SET resolved = 1 
+                    WHERE asset_id = ? AND trigger_url = ? AND resolved = 0 AND title NOT IN ({placeholders});
+                """
+                conn.execute(query, [asset_id, url] + list(active_titles))
+                
+                for a in triggered_alerts:
+                    existing = conn.execute("""
+                        SELECT id FROM alerts 
+                        WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 0;
+                    """, (asset_id, url, a['title'])).fetchone()
+                    
+                    if existing:
+                        conn.execute("""
+                            UPDATE alerts 
+                            SET description = ?, link = ?, pub_date = ?, is_secondary = ?
+                            WHERE id = ?;
+                        """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing['id']))
+                    else:
+                        existing_resolved = conn.execute("""
+                            SELECT id FROM alerts 
+                            WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
+                        """, (asset_id, url, a['title'])).fetchone()
+                        
+                        if existing_resolved:
+                            conn.execute("""
+                                UPDATE alerts 
+                                SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
+                                WHERE id = ?;
+                            """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
+                        else:
+                            conn.execute("""
+                                INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
+                                VALUES (?, ?, ?, ?, ?, 0, ?, ?);
+                            """, (asset_id, a['title'], a['description'], a['link'], a['pub_date'], url, a['is_secondary']))
+                            new_alerts_count += 1
                 
     conn.commit()
     
