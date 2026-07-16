@@ -383,23 +383,33 @@ def fetch_opencve_feed(url):
         affected_list = raw_nvd.get('affected') or []
         matched = False
         
+        # Distinction Client/Serveur pour le résumé ou les métadonnées
+        is_server_query = "server" in (vendor or "").lower() or "server" in (product or "").lower()
+        
         if not affected_list:
             # Si pas de liste d'affected, on cherche dans le résumé
             summary = cve_sum.get('summary') or ''
-            if product:
-                if product.lower() in summary.lower() or (vendor and vendor.lower() in summary.lower()):
-                    matched = True
-            else:
-                if vendor and vendor.lower() in summary.lower():
-                    matched = True
+            is_server_nvd = "server" in summary.lower()
+            if is_server_query == is_server_nvd:
+                if product:
+                    if product.lower() in summary.lower() or (vendor and vendor.lower() in summary.lower()):
+                        matched = True
+                else:
+                    if vendor and vendor.lower() in summary.lower():
+                        matched = True
         else:
             for aff in affected_list:
                 aff_data = aff.get('affectedData') or []
                 for data_item in aff_data:
                     v_val = data_item.get('vendor')
                     p_val = data_item.get('product')
-                    if not v_val:
+                    if not v_val or not p_val:
                         continue
+                        
+                    is_server_nvd = "server" in v_val.lower() or "server" in p_val.lower()
+                    if is_server_query != is_server_nvd:
+                        continue
+                        
                     norm_v_val = normalize_name(v_val)
                     norm_p_val = normalize_name(p_val)
                     
@@ -471,30 +481,33 @@ def fetch_opencve_feed(url):
                     continue
                     
                 versions_list = []
-                # Gérer versions et plages d'impact explicites
+                # Gérer versions et plages d'impact explicites (gte, gt, lte, lt)
                 for v_item in data_item.get('versions') or []:
                     v_val = v_item.get('version')
-                    lte_val = v_item.get('lessThanOrEqual')
-                    lt_val = v_item.get('lessThan')
+                    gte = v_item.get('greaterThanOrEqual') or v_item.get('greaterThan')
+                    lte = v_item.get('lessThanOrEqual') or v_item.get('lessThan')
                     
-                    if v_val and v_val != 'n/a':
-                        if lte_val:
-                            if v_val == '0':
-                                versions_list.append(f"<= {lte_val}")
-                            else:
-                                versions_list.append(f">= {v_val}, <= {lte_val}")
-                        elif lt_val:
-                            if v_val == '0':
-                                versions_list.append(f"< {lt_val}")
-                            else:
-                                versions_list.append(f">= {v_val}, < {lt_val}")
-                        else:
-                            versions_list.append(v_val)
-                    else:
-                        if lte_val:
-                            versions_list.append(f"<= {lte_val}")
-                        elif lt_val:
-                            versions_list.append(f"< {lt_val}")
+                    if v_val and any(op in str(v_val) for op in ('>', '<', '=')):
+                        versions_list.append(v_val)
+                        continue
+                        
+                    bounds = []
+                    # 1. Borne inférieure
+                    if gte:
+                        op_gt = '>=' if 'greaterThanOrEqual' in v_item else '>'
+                        bounds.append(f"{op_gt} {gte}")
+                    elif v_val and v_val != 'n/a' and v_val != '0':
+                        bounds.append(f">= {v_val}")
+                        
+                    # 2. Borne supérieure
+                    if lte:
+                        op_lt = '<=' if 'lessThanOrEqual' in v_item else '<'
+                        bounds.append(f"{op_lt} {lte}")
+                        
+                    if bounds:
+                        versions_list.append(", ".join(bounds))
+                    elif v_val and v_val != 'n/a':
+                        versions_list.append(v_val)
                         
                 if not versions_list:
                     for cpe_str in data_item.get('cpes') or []:
