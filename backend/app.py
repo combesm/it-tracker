@@ -1126,101 +1126,65 @@ def delete_asset(asset_id):
 # 3. Actions prioritaires (Alertes RSS d'actifs)
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
-    show_resolved = request.args.get('show_resolved', '0') == '1'
     conn = get_db_connection()
-    if show_resolved:
-        alerts_raw = conn.execute("""
-            SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
-            FROM alerts al
-            JOIN assets asst ON al.asset_id = asst.id
-            WHERE al.resolved = 1
-            ORDER BY al.pub_date DESC, al.id DESC;
-        """).fetchall()
-    else:
-        alerts_raw = conn.execute("""
-            SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
-            FROM alerts al
-            JOIN assets asst ON al.asset_id = asst.id
-            WHERE al.resolved = 0
-            ORDER BY al.pub_date DESC, al.id DESC;
-        """).fetchall()
+    alerts_raw = conn.execute("""
+        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
+        FROM alerts al
+        JOIN assets asst ON al.asset_id = asst.id
+        WHERE al.resolved = 0
+        ORDER BY al.pub_date DESC, al.id DESC;
+    """).fetchall()
     conn.close()
     
     filtered_alerts = []
     for a in alerts_raw:
         alert_dict = dict(a)
         status, priority, status_text, affected_versions = analyze_alert(alert_dict)
-        if not show_resolved and status == 'hide':
-            continue
-        alert_dict['priority'] = priority
-        alert_dict['status_text'] = status_text or "Validée / Résolue"
-        alert_dict['affected_versions'] = affected_versions
-        filtered_alerts.append(alert_dict)
+        if status != 'hide':
+            alert_dict['priority'] = priority
+            alert_dict['status_text'] = status_text
+            alert_dict['affected_versions'] = affected_versions
+            filtered_alerts.append(alert_dict)
             
     return jsonify(filtered_alerts)
 
 @app.route('/api/alerts/resolve/<int:alert_id>', methods=['POST'])
 def resolve_alert(alert_id):
     conn = get_db_connection()
-    # Récupérer la version actuelle de l'actif associé à cette alerte, son nom de produit et le titre
+    # Récupérer la version actuelle de l'actif associé à cette alerte
     asset_row = conn.execute("""
-        SELECT asst.id as asset_id, asst.nom_produit, asst.version_actuelle, al.title
+        SELECT asst.version_actuelle 
         FROM assets asst
         JOIN alerts al ON al.asset_id = asst.id
         WHERE al.id = ?;
     """, (alert_id,)).fetchone()
     
-    if asset_row:
-        version_actuelle = asset_row['version_actuelle']
-        nom_produit = asset_row['nom_produit']
-        title = asset_row['title']
-        asset_id = asset_row['asset_id']
-        
-        # Mettre à jour l'alerte
-        conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE id = ?;", (version_actuelle, alert_id))
-        
-        # Enregistrer dans l'historique (update_logs)
-        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-        is_cve = "CVE-" in title
-        prefix = "[CVE]" if is_cve else "[MAJ]"
-        
-        conn.execute("""
-            INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj)
-            VALUES (?, ?, ?, ?, ?);
-        """, (asset_id, nom_produit, f"{prefix} {title}", f"Résolue en version {version_actuelle}", now_str))
-        
+    version_actuelle = asset_row['version_actuelle'] if asset_row else None
+    
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE id = ?;", (version_actuelle, alert_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
 
-@app.route('/api/alerts/unresolve/<int:alert_id>', methods=['POST'])
-def unresolve_alert(alert_id):
+@app.route('/api/alerts/resolved', methods=['GET'])
+def get_resolved_alerts():
     conn = get_db_connection()
-    asset_row = conn.execute("""
-        SELECT asst.id as asset_id, asst.nom_produit, al.title
-        FROM assets asst
-        JOIN alerts al ON al.asset_id = asst.id
-        WHERE al.id = ?;
-    """, (alert_id,)).fetchone()
+    alerts_raw = conn.execute("""
+        SELECT al.*, asst.nom_produit as nom_produit, asst.responsable as responsable, asst.version_actuelle as version_actuelle
+        FROM alerts al
+        JOIN assets asst ON al.asset_id = asst.id
+        WHERE al.resolved = 1
+        ORDER BY al.pub_date DESC, al.id DESC;
+    """).fetchall()
+    conn.close()
     
-    if asset_row:
-        nom_produit = asset_row['nom_produit']
-        title = asset_row['title']
-        asset_id = asset_row['asset_id']
-        
-        # Annuler la résolution
-        conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL WHERE id = ?;", (alert_id,))
-        
-        # Enregistrer dans l'historique (update_logs)
-        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-        is_cve = "CVE-" in title
-        prefix = "[CVE]" if is_cve else "[MAJ]"
-        
-        conn.execute("""
-            INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj)
-            VALUES (?, ?, ?, ?, ?);
-        """, (asset_id, nom_produit, f"{prefix} {title}", "Réactivée (Résolution annulée)", now_str))
-        
+    res = [dict(a) for a in alerts_raw]
+    return jsonify(res)
+
+@app.route('/api/alerts/reactivate/<int:alert_id>', methods=['POST'])
+def reactivate_alert(alert_id):
+    conn = get_db_connection()
+    conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL WHERE id = ?;", (alert_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1307,18 +1271,6 @@ def resolve_asset_alerts(asset_id):
     updated_asset = conn.execute("SELECT version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
     updated_ver = updated_asset['version_actuelle'] if updated_asset else None
     
-    # Récupérer les alertes de cet actif qui vont être résolues
-    alerts_to_resolve = conn.execute("SELECT title FROM alerts WHERE asset_id = ? AND resolved = 0;", (asset_id,)).fetchall()
-    for al in alerts_to_resolve:
-        title = al['title']
-        is_cve = "CVE-" in title
-        prefix = "[CVE]" if is_cve else "[MAJ]"
-        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-        conn.execute("""
-            INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj)
-            VALUES (?, ?, ?, ?, ?);
-        """, (asset_id, nom_produit, f"{prefix} {title}", f"Résolue en version {updated_ver}", now_str))
-        
     conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, asset_id))
     conn.commit()
     conn.close()

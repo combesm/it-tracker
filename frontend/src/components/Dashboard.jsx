@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 export default function Dashboard({ backendUrl }) {
   const [stats, setStats] = useState({ total_assets: 0, expiring_licences: 0, pending_alerts: 0 });
   const [alerts, setAlerts] = useState([]);
-  const [showResolvedAlerts, setShowResolvedAlerts] = useState(false);
   const [certAlerts, setCertAlerts] = useState([]);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
@@ -39,10 +38,10 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
-  const fetchAlerts = async (resolvedFlag = showResolvedAlerts) => {
+  const fetchAlerts = async () => {
     try {
       setLoadingAlerts(true);
-      const res = await fetch(`${backendUrl}/api/alerts?show_resolved=${resolvedFlag ? '1' : '0'}`);
+      const res = await fetch(`${backendUrl}/api/alerts`);
       if (res.ok) {
         const data = await res.json();
         setAlerts(data);
@@ -83,7 +82,7 @@ export default function Dashboard({ backendUrl }) {
         setUpdateLogs(data);
       }
     } catch (err) {
-      console.error("Erreur lors de la récupération des logs:", err);
+      console.error("Erreur lors du chargement de l'historique:", err);
     } finally {
       setLoadingLogs(false);
     }
@@ -95,19 +94,31 @@ export default function Dashboard({ backendUrl }) {
       setErrorMessage('');
       setSuccessMessage('');
       setUnreachableFeeds([]);
+      
       const res = await fetch(`${backendUrl}/api/alerts/refresh`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setSuccessMessage('Synchronisation des alertes terminée.');
-        setUnreachableFeeds(data.unreachable_urls || []);
-        fetchAlerts(showResolvedAlerts);
+        setAlerts(data.alerts);
+        
+        if (data.unreachable_urls && data.unreachable_urls.length > 0) {
+          setUnreachableFeeds(data.unreachable_urls);
+        }
+        
+        const count = data.new_alerts_count;
+        if (count > 0) {
+          setSuccessMessage(`${count} nouvelle(s) alerte(s) récupérée(s) avec succès.`);
+        } else {
+          setSuccessMessage('Mise à jour terminée. Aucune nouvelle alerte détectée.');
+        }
+        
+        // Rafraîchir aussi les stats
         fetchStats();
       } else {
-        const data = await res.json();
-        setErrorMessage(data.error || 'Erreur lors de la synchronisation.');
+        setErrorMessage('Une erreur est survenue lors de la synchronisation des flux.');
       }
     } catch (err) {
       setErrorMessage('Erreur réseau lors de la synchronisation.');
+      console.error(err);
     } finally {
       setRefreshing(false);
     }
@@ -137,10 +148,10 @@ export default function Dashboard({ backendUrl }) {
 
   useEffect(() => {
     fetchStats();
-    fetchAlerts(showResolvedAlerts);
+    fetchAlerts();
     fetchCertAlerts();
     fetchUpdateLogs();
-  }, [showResolvedAlerts]);
+  }, []);
 
   // Formater la date en français propre
   const formatDate = (dateStr) => {
@@ -280,43 +291,32 @@ export default function Dashboard({ backendUrl }) {
       {/* Main Panel: Priority Actions */}
       <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm">
         {/* Card Header */}
-        <div className="px-6 py-5 border-b border-brand-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white">
+        <div className="px-6 py-5 border-b border-brand-border flex items-center justify-between bg-white">
           <div>
             <h3 className="text-lg font-bold text-brand-dark">Actions prioritaires (Alertes RSS)</h3>
             <p className="text-xs text-brand-text/60 mt-0.5">
               Vulnérabilités et correctifs identifiés via les flux RSS configurés sur vos actifs (groupés par actif).
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center space-x-2 text-xs font-semibold text-brand-dark cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showResolvedAlerts}
-                onChange={(e) => setShowResolvedAlerts(e.target.checked)}
-                className="w-4 h-4 text-brand-primary border-brand-border rounded focus:ring-brand-primary"
-              />
-              <span>Afficher les alertes résolues</span>
-            </label>
-            <button
-              onClick={handleRefreshAlerts}
-              disabled={refreshing}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg bg-brand-primary text-white hover:bg-brand-primary/95 transition-all flex items-center shadow-sm ${
-                refreshing ? 'opacity-70 cursor-not-allowed' : ''
-              }`}
-            >
-              {refreshing ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Mise à jour...
-                </>
-              ) : (
-                'Synchroniser les flux'
-              )}
-            </button>
-          </div>
+          <button
+            onClick={handleRefreshAlerts}
+            disabled={refreshing}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg bg-brand-primary text-white hover:bg-brand-primary/95 transition-all flex items-center shadow-sm ${
+              refreshing ? 'opacity-70 cursor-not-allowed' : ''
+            }`}
+          >
+            {refreshing ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Mise à jour...
+              </>
+            ) : (
+              'Synchroniser les flux'
+            )}
+          </button>
         </div>
 
         {/* Success/Error Alerts */}
@@ -460,7 +460,7 @@ export default function Dashboard({ backendUrl }) {
                           </td>
                           {/* Actions (stop propagation pour éviter de plier la ligne) */}
                           <td className="px-4 py-4 whitespace-nowrap text-right text-sm" onClick={(e) => e.stopPropagation()}>
-                            {!showResolvedAlerts && (() => {
+                            {(() => {
                               const updateAlert = asset.alerts.find(a => a.priority === 'update_available');
                               const newVersion = updateAlert ? updateAlert.affected_versions : null;
                               return (
@@ -547,41 +547,6 @@ export default function Dashboard({ backendUrl }) {
                                                 </>
                                               )}
                                             </div>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            {alert.resolved === 1 ? (
-                                              <button
-                                                onClick={async () => {
-                                                  if (confirm("Réactiver cette alerte ? Elle sera à nouveau visible sur le tableau de bord actif.")) {
-                                                    const res = await fetch(`${backendUrl}/api/alerts/unresolve/${alert.id}`, { method: 'POST' });
-                                                    if (res.ok) {
-                                                      fetchAlerts(showResolvedAlerts);
-                                                      fetchStats();
-                                                      fetchUpdateLogs();
-                                                    }
-                                                  }
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-brand-alert/10 text-brand-alert border border-brand-alert/20 hover:bg-brand-alert/20 cursor-pointer transition-all"
-                                              >
-                                                Réactiver
-                                              </button>
-                                            ) : (
-                                              <button
-                                                onClick={async () => {
-                                                  if (confirm("Valider et résoudre individuellement cette alerte ?")) {
-                                                    const res = await fetch(`${backendUrl}/api/alerts/resolve/${alert.id}`, { method: 'POST' });
-                                                    if (res.ok) {
-                                                      fetchAlerts(showResolvedAlerts);
-                                                      fetchStats();
-                                                      fetchUpdateLogs();
-                                                    }
-                                                  }
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-brand-successBg text-brand-success border border-brand-success/20 hover:bg-brand-success/15 cursor-pointer transition-all"
-                                              >
-                                                Valider / Résoudre
-                                              </button>
-                                            )}
                                           </div>
                                         </div>
                                       ))}
