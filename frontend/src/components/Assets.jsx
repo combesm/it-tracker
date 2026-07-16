@@ -21,6 +21,7 @@ export default function Assets({ backendUrl }) {
   const [tags, setTags] = useState('');
   const [filterTag, setFilterTag] = useState('');
   const [filterMode, setFilterMode] = useState('include'); // 'include' or 'exclude'
+  const [filterDeploiement, setFilterDeploiement] = useState('Tous');
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -218,13 +219,24 @@ export default function Assets({ backendUrl }) {
   }, [assets]);
 
   const filteredAssets = useMemo(() => {
-    if (!filterTag) return assets;
-    return assets.filter(asset => {
-      const tList = (asset.tags || []).map(t => t.toLowerCase().trim());
-      const isPresent = tList.includes(filterTag.toLowerCase().trim());
-      return filterMode === 'include' ? isPresent : !isPresent;
-    });
-  }, [assets, filterTag, filterMode]);
+    let result = assets;
+    
+    // Filter by Deployment type
+    if (filterDeploiement !== 'Tous') {
+      result = result.filter(asset => asset.type_deploiement === filterDeploiement);
+    }
+    
+    // Filter by Tag
+    if (filterTag) {
+      result = result.filter(asset => {
+        const tList = (asset.tags || []).map(t => t.toLowerCase().trim());
+        const isPresent = tList.includes(filterTag.toLowerCase().trim());
+        return filterMode === 'include' ? isPresent : !isPresent;
+      });
+    }
+    
+    return result;
+  }, [assets, filterDeploiement, filterTag, filterMode]);
 
   const getTagStyle = (tag) => {
     let hash = 0;
@@ -690,66 +702,89 @@ export default function Assets({ backendUrl }) {
         </div>
       )}
 
-      {/* Tag Filter Bar */}
-      {!formOpen && allTags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm animate-fadeIn">
-          <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Filtrer par étiquette :</span>
-          <button
-            onClick={() => {
-              setFilterTag('');
-              setFilterMode('include');
-            }}
-            className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
-              !filterTag
-                ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
-                : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
-            }`}
-          >
-            Tous
-          </button>
-          {allTags.map((tag, idx) => {
-            const isSelected = filterTag === tag;
-            const style = getTagStyle(tag);
-            
-            const handleClick = () => {
-              if (filterTag === tag) {
-                if (filterMode === 'include') {
-                  setFilterMode('exclude');
-                } else {
+      {/* Combined Filter Bar */}
+      {!formOpen && (
+        <div className="bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm space-y-3.5 animate-fadeIn">
+          {/* Deployment Filter */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Déploiement :</span>
+            {['Tous', 'SaaS', 'Self-hosted', 'On-premise'].map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilterDeploiement(type)}
+                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+                  filterDeploiement === type
+                    ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                    : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+
+          {/* Tag Filter */}
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-brand-border/40">
+              <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Étiquettes :</span>
+              <button
+                onClick={() => {
                   setFilterTag('');
                   setFilterMode('include');
-                }
-              } else {
-                setFilterTag(tag);
-                setFilterMode('include');
-              }
-            };
-            
-            let btnClass = `px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer flex items-center gap-1 `;
-            if (isSelected) {
-              if (filterMode === 'include') {
-                btnClass += `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`;
-              } else {
-                btnClass += `bg-brand-bg/60 text-brand-text/35 border-brand-border/65 line-through opacity-70 hover:bg-brand-bg/80`;
-              }
-            } else {
-              btnClass += `bg-white text-brand-text border-brand-border ${style.hover}`;
-            }
-            
-            return (
-              <button
-                key={idx}
-                onClick={handleClick}
-                className={btnClass}
-                title={isSelected && filterMode === 'exclude' ? "Sauf cette étiquette (cliquer pour effacer le filtre)" : isSelected ? "Cette étiquette uniquement (cliquer pour l'exclure)" : "Filtrer par cette étiquette"}
+                }}
+                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+                  !filterTag
+                    ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                    : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                }`}
               >
-                {isSelected && filterMode === 'exclude' && (
-                  <span className="text-[10px] font-extrabold text-brand-alert/80 mr-0.5">✕</span>
-                )}
-                {tag}
+                Tous
               </button>
-            );
-          })}
+              {allTags.map((tag, idx) => {
+                const isSelected = filterTag === tag;
+                const style = getTagStyle(tag);
+                
+                const handleClick = () => {
+                  if (filterTag === tag) {
+                    if (filterMode === 'include') {
+                      setFilterMode('exclude');
+                    } else {
+                      setFilterTag('');
+                      setFilterMode('include');
+                    }
+                  } else {
+                    setFilterTag(tag);
+                    setFilterMode('include');
+                  }
+                };
+                
+                let btnClass = `px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer flex items-center gap-1 `;
+                if (isSelected) {
+                  if (filterMode === 'include') {
+                    btnClass += `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`;
+                  } else {
+                    btnClass += `bg-brand-bg/60 text-brand-text/35 border-brand-border/65 line-through opacity-70 hover:bg-brand-bg/80`;
+                  }
+                } else {
+                  btnClass += `bg-white text-brand-text border-brand-border ${style.hover}`;
+                }
+                
+                return (
+                  <button
+                    key={idx}
+                    onClick={handleClick}
+                    className={btnClass}
+                    title={isSelected && filterMode === 'exclude' ? "Sauf cette étiquette (cliquer pour effacer le filtre)" : isSelected ? "Cette étiquette uniquement (cliquer pour l'exclure)" : "Filtrer par cette étiquette"}
+                  >
+                    {isSelected && filterMode === 'exclude' && (
+                      <span className="text-[10px] font-extrabold text-brand-alert/80 mr-0.5">✕</span>
+                    )}
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -775,7 +810,7 @@ export default function Assets({ backendUrl }) {
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Produit</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Version</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Responsable</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Licence</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-brand-dark uppercase tracking-wider">Déploiement</th>
                     <th scope="col" className="relative px-4 py-3 text-right">
                       <span className="sr-only">Actions</span>
                     </th>
@@ -837,15 +872,23 @@ export default function Assets({ backendUrl }) {
                               {asset.responsable}
                             </span>
                           </td>
-                          {/* Licence */}
+                          {/* Déploiement */}
                           <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full ${
-                              asset.type_licence === 'Limitée'
-                                ? 'bg-brand-alert/10 text-brand-alert'
-                                : 'bg-brand-successBg text-brand-success'
-                            }`}>
-                              {asset.type_licence || 'Perpétuelle'}
-                            </span>
+                            {asset.type_deploiement === 'SaaS' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                SaaS
+                              </span>
+                            )}
+                            {asset.type_deploiement === 'Self-hosted' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                                Self-hosted
+                              </span>
+                            )}
+                            {asset.type_deploiement === 'On-premise' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                On-premise
+                              </span>
+                            )}
                           </td>
                           {/* Actions (stop propagation to avoid toggling collapse) */}
                           <td className="px-4 py-4 whitespace-nowrap text-right text-xs font-semibold space-x-2" onClick={(e) => e.stopPropagation()}>
@@ -894,6 +937,14 @@ export default function Assets({ backendUrl }) {
                                   <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Type de déploiement</span>
                                   <span className="font-semibold text-brand-text text-sm mt-1.5 block">
                                     {asset.type_deploiement}
+                                  </span>
+                                </div>
+
+                                {/* Type de licence */}
+                                <div>
+                                  <span className="block text-[10px] font-bold text-brand-dark/60 uppercase tracking-wider">Type de licence</span>
+                                  <span className="font-semibold text-brand-text text-sm mt-1.5 block">
+                                    {asset.type_licence || 'Perpétuelle'}
                                   </span>
                                 </div>
 
