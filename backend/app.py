@@ -55,8 +55,15 @@ def analyze_alert(alert):
                 is_vulnerable = False
                 asset_ver = parse_version_safe(version_actuelle)
                 
-                for ver_spec in impacted_matches:
-                    ver_spec = ver_spec.strip()
+                # Aplatir la liste en séparant par virgule pour gérer les listes de plages (ex: 4.0.0-5.4.5, 6.0.0-6.1.0)
+                specs_list = []
+                for spec in impacted_matches:
+                    for part in spec.split(','):
+                        part_str = part.strip()
+                        if part_str:
+                            specs_list.append(part_str)
+                            
+                for ver_spec in specs_list:
                     match_hyphen = re.match(r'^([^-]+)\s*-\s*([^-]+)$', ver_spec)
                     if match_hyphen:
                         v_min_str = match_hyphen.group(1).strip()
@@ -86,14 +93,12 @@ def analyze_alert(alert):
                         if asset_ver and v and asset_ver > v:
                             is_vulnerable = True
                     else:
-                        for v_part in ver_spec.split(','):
-                            v_part = v_part.strip()
-                            if v_part == version_actuelle:
+                        if ver_spec == version_actuelle:
+                            is_vulnerable = True
+                        else:
+                            v = parse_version_safe(ver_spec)
+                            if asset_ver and v and asset_ver == v:
                                 is_vulnerable = True
-                            else:
-                                v = parse_version_safe(v_part)
-                                if asset_ver and v and asset_ver == v:
-                                    is_vulnerable = True
                 
                 if not is_vulnerable:
                     return 'hide', None, None, None
