@@ -416,7 +416,7 @@ def fetch_opencve_feed(url):
                     
         if matched:
             # On conserve le detail de la CVE dans l'objet pour éviter un second fetch en dessous
-            cve['_cached_detail'] = cve_detail
+            cve_sum['_cached_detail'] = cve_detail
             filtered_results.append(cve_sum)
 
     # Récupérer les détails et construire la liste d'alertes finale
