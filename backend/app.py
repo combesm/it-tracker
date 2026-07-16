@@ -740,6 +740,16 @@ def fetch_rss_feed(url, xml_data=None):
                 id_elem = find_child(item_elem, 'guid')
             id_text = id_elem.text if id_elem is not None else ""
             
+            # Ignorer les tags génériques redondants (comme latest-oss, latest-ee, latest, stable)
+            # qui polluent les flux de releases GitHub
+            clean_title = title_text.strip().lower()
+            if clean_title in ('latest-oss', 'latest-ee', 'latest', 'stable', 'release-candidate', 'current-stable'):
+                continue
+            if link_text:
+                lower_link = link_text.lower()
+                if any(f"/tag/{g}" in lower_link or f"/tags/{g}" in lower_link or lower_link.endswith(f"/{g}") for g in ('latest-oss', 'latest-ee', 'latest', 'stable')):
+                    continue
+                    
             extracted_ver = extract_version_from_entry(title_text, link_text, id_text)
             
             items.append({
@@ -1141,7 +1151,17 @@ def get_alerts():
 @app.route('/api/alerts/resolve/<int:alert_id>', methods=['POST'])
 def resolve_alert(alert_id):
     conn = get_db_connection()
-    conn.execute("UPDATE alerts SET resolved = 1 WHERE id = ?;", (alert_id,))
+    # Récupérer la version actuelle de l'actif associé à cette alerte
+    asset_row = conn.execute("""
+        SELECT asst.version_actuelle 
+        FROM assets asst
+        JOIN alerts al ON al.asset_id = asst.id
+        WHERE al.id = ?;
+    """, (alert_id,)).fetchone()
+    
+    version_actuelle = asset_row['version_actuelle'] if asset_row else None
+    
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE id = ?;", (version_actuelle, alert_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1224,7 +1244,11 @@ def resolve_asset_alerts(asset_id):
                 VALUES (?, ?, ?, ?, ?);
             """, (asset_id, nom_produit, ancienne_version, clean_ver, now_str))
         
-    conn.execute("UPDATE alerts SET resolved = 1 WHERE asset_id = ? AND resolved = 0;", (asset_id,))
+    # Récupérer la version de l'actif après mise à jour
+    updated_asset = conn.execute("SELECT version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
+    updated_ver = updated_asset['version_actuelle'] if updated_asset else None
+    
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, asset_id))
     conn.commit()
     conn.close()
     
@@ -1410,16 +1434,24 @@ def refresh_alerts():
                         """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing['id']))
                     else:
                         existing_resolved = conn.execute("""
-                            SELECT id FROM alerts 
+                            SELECT id, resolved_at_version FROM alerts 
                             WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
                         """, (asset_id, url, a['title'])).fetchone()
                         
                         if existing_resolved:
-                            conn.execute("""
-                                UPDATE alerts 
-                                SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
-                                WHERE id = ?;
-                            """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
+                            resolved_at_ver = existing_resolved['resolved_at_version']
+                            if resolved_at_ver is not None and resolved_at_ver != version_actuelle:
+                                conn.execute("""
+                                    UPDATE alerts 
+                                    SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
+                                    WHERE id = ?;
+                                """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
+                            elif resolved_at_ver is None:
+                                conn.execute("""
+                                    UPDATE alerts 
+                                    SET resolved_at_version = ?
+                                    WHERE id = ?;
+                                """, (version_actuelle, existing_resolved['id']))
                         else:
                             conn.execute("""
                                 INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
@@ -1584,6 +1616,11 @@ if __name__ == '__main__':
             
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN is_secondary INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+            
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN resolved_at_version TEXT;")
         except sqlite3.OperationalError:
             pass
             
