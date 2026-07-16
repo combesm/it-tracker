@@ -497,7 +497,9 @@ def fetch_opencve_feed(url):
                         op_gt = '>=' if 'greaterThanOrEqual' in v_item else '>'
                         bounds.append(f"{op_gt} {gte}")
                     elif v_val and v_val != 'n/a' and v_val != '0':
-                        bounds.append(f">= {v_val}")
+                        # Si une borne supérieure est présente, v_val représente le début de la plage (donc >= v_val)
+                        if lte:
+                            bounds.append(f">= {v_val}")
                         
                     # 2. Borne supérieure
                     if lte:
