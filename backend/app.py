@@ -157,25 +157,35 @@ def analyze_alert(alert):
 
     # 1. Flux de Releases (ex: GitHub releases)
     # Le titre contient uniquement la version (ex: "v0.62.4" ou "0.62.4")
-    version_pattern = r'^v?\d+(?:\.\d+)+(?:-\d+)?$'
+    # ou une version a été extraite de l'entrée du flux (comme dans le cas de GophishFR)
+    extracted_ver_str = alert.get('extracted_version')
+    version_pattern = r'^v?\d+(?:\.\d+)+(?:-[a-zA-Z0-9.]+)?$'
     clean_title = title.strip()
     
-    is_release_feed = bool(re.match(version_pattern, clean_title, re.IGNORECASE))
+    is_release_feed = False
+    ver_to_check = None
     
-    if is_release_feed:
-        rss_ver = parse_version_safe(clean_title)
+    if extracted_ver_str:
+        is_release_feed = True
+        ver_to_check = extracted_ver_str
+    elif re.match(version_pattern, clean_title, re.IGNORECASE):
+        is_release_feed = True
+        ver_to_check = clean_title
+        
+    if is_release_feed and ver_to_check:
+        rss_ver = parse_version_safe(ver_to_check)
         asset_ver = parse_version_safe(version_actuelle)
         
         if rss_ver is None:
             return 'show', 'manual_check', 'Vérification manuelle de la version requise', 'Non déterminée'
             
         if asset_ver is None:
-            return 'show', 'manual_check', 'Vérification manuelle de la version requise', clean_title
+            return 'show', 'manual_check', 'Vérification manuelle de la version requise', ver_to_check
             
         if rss_ver <= asset_ver:
             return 'hide', None, None, None
         else:
-            return 'show', 'update_available', 'Mise à jour disponible', clean_title
+            return 'show', 'update_available', 'Mise à jour disponible', ver_to_check
             
     # 2. Flux de Sécurité textuels (ex: Joomla, CERT-FR)
     full_text = f"{title} \n {description}"
@@ -582,6 +592,33 @@ def fetch_opencve_feed(url):
         
     return items
 
+# Helper : extraire proprement la version depuis le titre, le lien ou l'ID d'une entrée de flux
+def extract_version_from_entry(title, link, entry_id=None):
+    version_regex = r'\b(?:v)?(\d+\.\d+(?:\.\d+)*(?:-[a-zA-Z0-9.]+)?)\b'
+    version_pattern = r'^v?\d+(?:\.\d+)+(?:-[a-zA-Z0-9.]+)?$'
+    
+    if title:
+        clean_title = title.strip()
+        if re.match(version_pattern, clean_title, re.IGNORECASE):
+            return clean_title
+            
+    if link:
+        match_link = re.search(r'/tags?/(v?\d+(?:\.\d+)+(?:-[a-zA-Z0-9.]+)?)\b', link, re.IGNORECASE)
+        if match_link:
+            return match_link.group(1)
+            
+    if entry_id:
+        match_id = re.search(r'/(v?\d+(?:\.\d+)+(?:-[a-zA-Z0-9.]+)?)$', entry_id, re.IGNORECASE)
+        if match_id:
+            return match_id.group(1)
+            
+    if title:
+        match_title = re.search(version_regex, title, re.IGNORECASE)
+        if match_title:
+            return match_title.group(0)
+            
+    return None
+
 # Helper: Parseur RSS générique et robuste
 def fetch_rss_feed(url, xml_data=None):
     if url.lower().startswith('opencve://'):
@@ -653,11 +690,20 @@ def fetch_rss_feed(url, xml_data=None):
             pub_date_text = pub_date_elem.text if pub_date_elem is not None and pub_date_elem.text is not None else ""
             desc_text = desc_elem.text if desc_elem is not None and desc_elem.text is not None else ""
             
+            # Extraction de l'ID/guid de l'entrée
+            id_elem = find_child(item_elem, 'id')
+            if id_elem is None:
+                id_elem = find_child(item_elem, 'guid')
+            id_text = id_elem.text if id_elem is not None else ""
+            
+            extracted_ver = extract_version_from_entry(title_text, link_text, id_text)
+            
             items.append({
                 'title': title_text,
                 'link': link_text,
                 'pub_date': pub_date_text,
-                'description': desc_text
+                'description': desc_text,
+                'extracted_version': extracted_ver
             })
         return items
     except Exception as e:
@@ -1264,11 +1310,17 @@ def refresh_alerts():
                         desc = item.get('description', '')
                         link = item['link']
                         pub_date = item['pub_date']
+                        extracted_ver = item.get('extracted_version')
                         
+                        # Si on a extrait une version et qu'elle n'est pas dans le titre, on l'ajoute pour la clarté
+                        if extracted_ver and extracted_ver.lower() not in title.lower():
+                            title = f"{title} ({extracted_ver})"
+                            
                         temp_alert = {
                             'title': title,
                             'description': desc,
-                            'version_actuelle': version_actuelle
+                            'version_actuelle': version_actuelle,
+                            'extracted_version': extracted_ver
                         }
                         status, priority, status_text, affected_versions = analyze_alert(temp_alert)
                         
