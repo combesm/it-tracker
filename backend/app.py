@@ -55,50 +55,72 @@ def analyze_alert(alert):
                 is_vulnerable = False
                 asset_ver = parse_version_safe(version_actuelle)
                 
-                # Aplatir la liste en séparant par virgule pour gérer les listes de plages (ex: 4.0.0-5.4.5, 6.0.0-6.1.0)
-                specs_list = []
                 for spec in impacted_matches:
-                    for part in spec.split(','):
-                        part_str = part.strip()
-                        if part_str:
-                            specs_list.append(part_str)
-                            
-                for ver_spec in specs_list:
-                    match_hyphen = re.match(r'^([^-]+)\s*-\s*([^-]+)$', ver_spec)
-                    if match_hyphen:
-                        v_min_str = match_hyphen.group(1).strip()
-                        v_max_str = match_hyphen.group(2).strip()
-                        v_min = parse_version_safe(v_min_str)
-                        v_max = parse_version_safe(v_max_str)
-                        if asset_ver and v_min and v_max and v_min <= asset_ver <= v_max:
+                    spec = spec.strip()
+                    # Déterminer s'il s'agit d'une contrainte d'inégalités combinées (AND)
+                    if any(op in spec for op in ('<=', '<', '>=', '>', '&lt;=', '&lt;', '&gt;=', '&gt;')):
+                        parts = [p.strip() for p in spec.split(',') if p.strip()]
+                        spec_ok = True
+                        for part in parts:
+                            part_matched = False
+                            if part.startswith('<=') or part.startswith('&lt;='):
+                                v_str = part.replace('<=', '').replace('&lt;=', '').strip()
+                                v = parse_version_safe(v_str)
+                                if asset_ver and v and asset_ver <= v:
+                                    part_matched = True
+                            elif part.startswith('<') or part.startswith('&lt;'):
+                                v_str = part.replace('<', '').replace('&lt;', '').strip()
+                                v = parse_version_safe(v_str)
+                                if asset_ver and v and asset_ver < v:
+                                    part_matched = True
+                            elif part.startswith('>=') or part.startswith('&gt;='):
+                                v_str = part.replace('>=', '').replace('&gt;=', '').strip()
+                                v = parse_version_safe(v_str)
+                                if asset_ver and v and asset_ver >= v:
+                                    part_matched = True
+                            elif part.startswith('>') or part.startswith('&gt;'):
+                                v_str = part.replace('>', '').replace('&gt;', '').strip()
+                                v = parse_version_safe(v_str)
+                                if asset_ver and v and asset_ver > v:
+                                    part_matched = True
+                            else:
+                                if part == version_actuelle:
+                                    part_matched = True
+                                else:
+                                    v = parse_version_safe(part)
+                                    if asset_ver and v and asset_ver == v:
+                                        part_matched = True
+                            if not part_matched:
+                                spec_ok = False
+                                break
+                        if spec_ok:
                             is_vulnerable = True
-                    elif ver_spec.startswith('<=') or ver_spec.startswith('&lt;='):
-                        v_str = ver_spec.replace('<=', '').replace('&lt;=', '').strip()
-                        v = parse_version_safe(v_str)
-                        if asset_ver and v and asset_ver <= v:
-                            is_vulnerable = True
-                    elif ver_spec.startswith('<') or ver_spec.startswith('&lt;'):
-                        v_str = ver_spec.replace('<', '').replace('&lt;', '').strip()
-                        v = parse_version_safe(v_str)
-                        if asset_ver and v and asset_ver < v:
-                            is_vulnerable = True
-                    elif ver_spec.startswith('>=') or ver_spec.startswith('&gt;='):
-                        v_str = ver_spec.replace('>=', '').replace('&gt;=', '').strip()
-                        v = parse_version_safe(v_str)
-                        if asset_ver and v and asset_ver >= v:
-                            is_vulnerable = True
-                    elif ver_spec.startswith('>') or ver_spec.startswith('&gt;'):
-                        v_str = ver_spec.replace('>', '').replace('&gt;', '').strip()
-                        v = parse_version_safe(v_str)
-                        if asset_ver and v and asset_ver > v:
-                            is_vulnerable = True
+                            break
                     else:
-                        if ver_spec == version_actuelle:
-                            is_vulnerable = True
-                        else:
-                            v = parse_version_safe(ver_spec)
-                            if asset_ver and v and asset_ver == v:
+                        # Relation OR pour les versions standards et plages avec tirets
+                        parts = [p.strip() for p in spec.split(',') if p.strip()]
+                        for part in parts:
+                            part_matched = False
+                            match_hyphen = re.match(r'^([^-]+)\s*-\s*([^-]+)$', part)
+                            if match_hyphen:
+                                v_min_str = match_hyphen.group(1).strip()
+                                v_max_str = match_hyphen.group(2).strip()
+                                v_min = parse_version_safe(v_min_str)
+                                v_max = parse_version_safe(v_max_str)
+                                if asset_ver and v_min and v_max and v_min <= asset_ver <= v_max:
+                                    part_matched = True
+                            else:
+                                if part == version_actuelle:
+                                    part_matched = True
+                                else:
+                                    v = parse_version_safe(part)
+                                    if asset_ver and v and asset_ver == v:
+                                        part_matched = True
+                            if part_matched:
                                 is_vulnerable = True
+                                break
+                        if is_vulnerable:
+                            break
                 
                 if not is_vulnerable:
                     return 'hide', None, None, None
@@ -248,154 +270,207 @@ def fetch_opencve_feed(url):
     if not parts:
         return []
         
+    query_type = parts[0] # 'vendor' ou 'product'
+    vendor = parts[1] if len(parts) >= 2 else None
+    product = parts[2] if len(parts) >= 3 else None
+    
     api_url = f"{opencve_url}/api/cve"
-    if len(parts) >= 2 and parts[0] == 'vendor':
-        vendor = parts[1]
+    if query_type == 'vendor' and vendor:
         api_url += f"?vendor={urllib.parse.quote(vendor)}"
-    elif len(parts) >= 3 and parts[0] == 'product':
-        vendor = parts[1]
-        product = parts[2]
+    elif query_type == 'product' and vendor and product:
         # Normalisation automatique pour Joomla (qui s'écrit joomlack.fr ou joomla\! dans le dictionnaire CPE)
         if vendor.lower() == 'joomla' and product.lower() in ('joomla', 'joomla!', 'joomla\\!', 'joomla\\\\!'):
             product = 'joomla\\!'
         api_url += f"?vendor={urllib.parse.quote(vendor)}&product={urllib.parse.quote(product)}"
         
-    try:
-        req = urllib.request.Request(api_url)
+    # Headers
+    host_val = os.getenv('OPENCVE_HOST_HEADER')
+    if not host_val:
+        parsed = urllib.parse.urlparse(opencve_url)
+        host_val = parsed.hostname
         
-        # Forcer le Host header (requis par la directive strict SERVER_NAME de Flask/OpenCVE)
-        host_val = os.getenv('OPENCVE_HOST_HEADER')
-        if not host_val:
-            parsed = urllib.parse.urlparse(opencve_url)
-            host_val = parsed.hostname
+    auth_b64 = None
+    if not opencve_token:
+        auth_str = f"{opencve_user}:{opencve_password}"
+        auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
+        
+    def perform_request(target_url):
+        req = urllib.request.Request(target_url)
         if host_val:
             req.add_header('Host', host_val)
-            
         if opencve_token:
             req.add_header('Authorization', f'Bearer {opencve_token}')
         else:
-            auth_str = f"{opencve_user}:{opencve_password}"
-            auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
             req.add_header('Authorization', f'Basic {auth_b64}')
-            
         req.add_header('User-Agent', 'herakles-it-tracker/1.0')
         req.add_header('Accept', 'application/json')
-        
         with urllib.request.urlopen(req, timeout=4) as response:
-            res_data = response.read()
-            
+            return response.read()
+
+    # Tentative d'appel direct
+    raw_results = []
+    direct_success = False
+    try:
+        res_data = perform_request(api_url)
         cve_list = json.loads(res_data)
-        
-        results = []
         if isinstance(cve_list, dict) and 'results' in cve_list:
-            results = cve_list['results']
+            raw_results = cve_list['results']
         elif isinstance(cve_list, list):
-            results = cve_list
-            
-        items = []
-        for cve in results:
-            cve_id = cve.get('id') or 'CVE-Unknown'
-            summary = cve.get('summary') or 'Aucun résumé fourni.'
-            pub_date = cve.get('published_at') or cve.get('updated_at') or ''
-            
-            # Récupérer les détails de la CVE pour avoir le score CVSS
-            cvss_score = None
-            cvss_severity = None
-            detail_url = f"{opencve_url}/api/cve/{cve_id}"
+            raw_results = cve_list
+        direct_success = len(raw_results) > 0
+    except Exception as e:
+        print(f"Erreur d'appel direct OpenCVE ({api_url}) : {e}")
+
+    # Fallback si l'appel direct a renvoyé 0 résultat ou une erreur
+    if not direct_success:
+        print(f"L'appel direct OpenCVE a renvoyé 0 résultat. Tentative de recherche fallback...")
+        search_terms = []
+        if vendor and len(vendor) >= 3:
+            search_terms.append(vendor)
+        if product:
+            p_parts = [p for p in re.split(r'[-_]', product) if p]
+            if p_parts and len(p_parts[0]) >= 3:
+                search_terms.append(p_parts[0])
+                
+        candidates = {}
+        for term in search_terms:
             try:
-                d_req = urllib.request.Request(detail_url)
-                if host_val:
-                    d_req.add_header('Host', host_val)
-                if opencve_token:
-                    d_req.add_header('Authorization', f'Bearer {opencve_token}')
-                else:
-                    d_req.add_header('Authorization', f'Basic {auth_b64}')
-                d_req.add_header('User-Agent', 'herakles-it-tracker/1.0')
-                d_req.add_header('Accept', 'application/json')
+                search_url = f"{opencve_url}/api/cve?search={urllib.parse.quote(term)}"
+                search_data_bytes = perform_request(search_url)
+                search_data = json.loads(search_data_bytes)
+                search_list = []
+                if isinstance(search_data, dict) and 'results' in search_data:
+                    search_list = search_data['results']
+                elif isinstance(search_data, list):
+                    search_list = search_data
+                    
+                for cve_sum in search_list:
+                    if 'id' in cve_sum:
+                        candidates[cve_sum['id']] = cve_sum
+            except Exception as e_search:
+                print(f"Erreur de recherche fallback pour {term}: {e_search}")
                 
-                with urllib.request.urlopen(d_req, timeout=3) as d_resp:
-                    cve_detail = json.loads(d_resp.read())
-                
-                cvss_dict = cve_detail.get('cvss') or {}
-                cvss_score = cvss_dict.get('v3')
-                if cvss_score is None:
-                    cvss_score = cvss_dict.get('v2')
-                
-                if cvss_score is not None:
-                    # Conversion en float au cas où
-                    cvss_score = float(cvss_score)
-                    if cvss_score >= 9.0:
-                        cvss_severity = "CRITICAL"
-                    elif cvss_score >= 7.0:
-                        cvss_severity = "HIGH"
-                    elif cvss_score >= 4.0:
-                        cvss_severity = "MEDIUM"
-                    else:
-                        cvss_severity = "LOW"
+        # Filtrage des candidats par le contenu de raw_nvd_data
+        for cve_id, cve_sum in candidates.items():
+            try:
+                detail_url = f"{opencve_url}/api/cve/{cve_id}"
+                detail_data_bytes = perform_request(detail_url)
+                cve_detail = json.loads(detail_data_bytes)
             except Exception as e_detail:
-                print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
+                print(f"Erreur de récupération détails pour {cve_id} (fallback): {e_detail}")
+                continue
                 
-            # Formater les versions impactées sous forme de description
-            affected_vers = []
             raw_nvd = cve_detail.get('raw_nvd_data') or {}
             affected_list = raw_nvd.get('affected') or []
+            matched = False
             for aff in affected_list:
                 aff_data = aff.get('affectedData') or []
                 for data_item in aff_data:
-                    vendor = data_item.get('vendor')
-                    product = data_item.get('product')
-                    if not vendor or not product or vendor == 'n/a' or product == 'n/a':
+                    v_val = data_item.get('vendor')
+                    p_val = data_item.get('product')
+                    if not v_val or not p_val:
                         continue
+                    if query_type == 'product' and vendor and product:
+                        if v_val.lower() == vendor.lower() and p_val.lower() == product.lower():
+                            matched = True
+                            break
+                    else:
+                        if v_val.lower() == vendor.lower():
+                            matched = True
+                            break
+                if matched:
+                    break
+            if matched:
+                raw_results.append(cve_sum)
+
+    # Récupérer les détails et construire la liste d'alertes finale
+    items = []
+    for cve in raw_results:
+        cve_id = cve.get('id') or 'CVE-Unknown'
+        summary = cve.get('summary') or 'Aucun résumé fourni.'
+        pub_date = cve.get('published_at') or cve.get('updated_at') or ''
+        
+        cvss_score = None
+        cvss_severity = None
+        detail_url = f"{opencve_url}/api/cve/{cve_id}"
+        
+        cve_detail = {}
+        try:
+            d_resp_data = perform_request(detail_url)
+            cve_detail = json.loads(d_resp_data)
+            
+            cvss_dict = cve_detail.get('cvss') or {}
+            cvss_score = cvss_dict.get('v3')
+            if cvss_score is None:
+                cvss_score = cvss_dict.get('v2')
+            
+            if cvss_score is not None:
+                cvss_score = float(cvss_score)
+                if cvss_score >= 9.0:
+                    cvss_severity = "CRITICAL"
+                elif cvss_score >= 7.0:
+                    cvss_severity = "HIGH"
+                elif cvss_score >= 4.0:
+                    cvss_severity = "MEDIUM"
+                else:
+                    cvss_severity = "LOW"
+        except Exception as e_detail:
+            print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
+            
+        affected_vers = []
+        raw_nvd = cve_detail.get('raw_nvd_data') or {}
+        affected_list = raw_nvd.get('affected') or []
+        for aff in affected_list:
+            aff_data = aff.get('affectedData') or []
+            for data_item in aff_data:
+                v_name = data_item.get('vendor')
+                p_name = data_item.get('product')
+                if not v_name or not p_name or v_name == 'n/a' or p_name == 'n/a':
+                    continue
+                    
+                versions_list = []
+                for v_item in data_item.get('versions') or []:
+                    v_val = v_item.get('version')
+                    if v_val and v_val != 'n/a':
+                        versions_list.append(v_val)
                         
-                    versions_list = []
-                    for v_item in data_item.get('versions') or []:
-                        v_val = v_item.get('version')
-                        if v_val and v_val != 'n/a':
-                            versions_list.append(v_val)
-                            
-                    if not versions_list:
-                        for cpe_str in data_item.get('cpes') or []:
-                            cpe_parts = cpe_str.split(':')
-                            if len(cpe_parts) >= 6:
-                                cpe_ver = cpe_parts[5]
-                                if cpe_ver and cpe_ver not in ('*', '-'):
-                                    versions_list.append(cpe_ver)
-                                    
-                    if versions_list:
-                        # Dédupliquer les versions
-                        unique_vers = list(dict.fromkeys(versions_list))
-                        affected_vers.append(f"{vendor} {product} ({', '.join(unique_vers)})")
+                if not versions_list:
+                    for cpe_str in data_item.get('cpes') or []:
+                        cpe_parts = cpe_str.split(':')
+                        if len(cpe_parts) >= 6:
+                            cpe_ver = cpe_parts[5]
+                            if cpe_ver and cpe_ver not in ('*', '-'):
+                                versions_list.append(cpe_ver)
+                                
+                if versions_list:
+                    unique_vers = list(dict.fromkeys(versions_list))
+                    affected_vers.append(f"{v_name} {p_name} ({', '.join(unique_vers)})")
+                    
+        desc_html = ""
+        if cvss_score is not None:
+            severity_label = f" ({cvss_severity})" if cvss_severity else ""
+            desc_html += f"<p><strong>Score CVSS :</strong> <span style='font-weight: bold; color: #dc2626;'>{cvss_score}</span>{severity_label}</p>"
             
-            # Construire la description HTML avec les détails du score
-            desc_html = ""
-            if cvss_score is not None:
-                severity_label = f" ({cvss_severity})" if cvss_severity else ""
-                desc_html += f"<p><strong>Score CVSS :</strong> <span style='font-weight: bold; color: #dc2626;'>{cvss_score}</span>{severity_label}</p>"
-                
-            desc_html += f"<p>{summary}</p>"
-            if affected_vers:
-                desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
-                for av in affected_vers:
-                    desc_html += f"<li>{av}</li>"
-                desc_html += "</ul>"
-                
-            # Modifier le titre si on a un score CVSS
-            if cvss_score is not None:
-                title = f"[CVE / CVSS: {cvss_score}] {cve_id} - {summary[:80]}..."
-            else:
-                title = f"{cve_id} - {summary[:80]}..."
-                
-            items.append({
-                'title': title,
-                'link': f"https://www.cve.org/CVERecord?id={cve_id}",
-                'pub_date': pub_date,
-                'description': desc_html
-            })
+        desc_html += f"<p>{summary}</p>"
+        if affected_vers:
+            desc_html += "<p><strong>Versions impactées détectées :</strong></p><ul>"
+            for av in affected_vers:
+                desc_html += f"<li>{av}</li>"
+            desc_html += "</ul>"
             
-        return items
-    except Exception as e:
-        print(f"Erreur de récupération de l'API OpenCVE ({api_url}): {e}")
-        return None
+        if cvss_score is not None:
+            title = f"[CVE / CVSS: {cvss_score}] {cve_id} - {summary[:80]}..."
+        else:
+            title = f"{cve_id} - {summary[:80]}..."
+            
+        items.append({
+            'title': title,
+            'link': f"https://www.cve.org/CVERecord?id={cve_id}",
+            'pub_date': pub_date,
+            'description': desc_html
+        })
+        
+    return items
 
 # Helper: Parseur RSS générique et robuste
 def fetch_rss_feed(url, xml_data=None):
