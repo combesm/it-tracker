@@ -24,30 +24,75 @@ def parse_version_safe(v_str):
     except InvalidVersion:
         return None
 
+def compare_versions_normalized(ver_a, ver_b):
+    """
+    Compare deux objets Version de manière robuste.
+    Si l'un a un segment majeur '0' ou '1' (que l'autre n'a pas, car commençant par >= 10),
+    on dé-préfixe ce segment pour permettre la comparaison de la branche mineure (ex: 0.63 vs 57.1).
+    """
+    parts_a = list(ver_a.release)
+    parts_b = list(ver_b.release)
+    
+    norm_a = parts_a
+    norm_b = parts_b
+    
+    if len(parts_a) > 1 and parts_a[0] in (0, 1) and len(parts_b) > 0 and parts_b[0] >= 10:
+        norm_a = parts_a[1:]
+    elif len(parts_b) > 1 and parts_b[0] in (0, 1) and len(parts_a) > 0 and parts_a[0] >= 10:
+        norm_b = parts_b[1:]
+        
+    str_a = ".".join(map(str, norm_a))
+    str_b = ".".join(map(str, norm_b))
+    
+    if ver_a.pre:
+        str_a += f"-{ver_a.pre[0]}{ver_a.pre[1]}"
+    if ver_b.pre:
+        str_b += f"-{ver_b.pre[0]}{ver_b.pre[1]}"
+        
+    try:
+        val_a = Version(str_a)
+        val_b = Version(str_b)
+        if val_a < val_b:
+            return -1
+        elif val_a > val_b:
+            return 1
+        return 0
+    except Exception:
+        if ver_a < ver_b:
+            return -1
+        elif ver_a > ver_b:
+            return 1
+        return 0
+
 def analyze_alert(alert):
     title = alert.get('title') or ''
     description = alert.get('description') or ''
     version_actuelle = alert.get('version_actuelle') or ''
     
-    # Détection de score CVSS dans le titre (ex: "[CVE / CVSS: 9.8] CVE-2024-25140 - ...")
+    # Détection de type CVE (soit via CVSS dans le titre, soit via présence d'un motif CVE-XXXX-XXXXX)
     cvss_match = re.search(r'\[CVE / CVSS:\s*(\d+(?:\.\d+)?)\]', title)
-    if cvss_match:
-        cvss_score = float(cvss_match.group(1))
+    cve_id_match = re.search(r'\b(CVE-\d{4}-\d{4,})\b', title)
+    
+    if cvss_match or cve_id_match:
+        cvss_score = None
+        priority = 'medium'
+        status_text = 'Vulnérabilité (CVSS non disponible)'
         
-        # Déterminer la priorité et le libellé de statut
-        if cvss_score >= 9.0:
-            priority = 'critical'
-            status_text = f'Vulnérabilité Critique (CVSS: {cvss_score})'
-        elif cvss_score >= 7.0:
-            priority = 'high'
-            status_text = f'Vulnérabilité Élevée (CVSS: {cvss_score})'
-        elif cvss_score >= 4.0:
-            priority = 'medium'
-            status_text = f'Vulnérabilité Moyenne (CVSS: {cvss_score})'
-        else:
-            priority = 'low'
-            status_text = f'Vulnérabilité Faible (CVSS: {cvss_score})'
-            
+        if cvss_match:
+            cvss_score = float(cvss_match.group(1))
+            if cvss_score >= 9.0:
+                priority = 'critical'
+                status_text = f'Vulnérabilité Critique (CVSS: {cvss_score})'
+            elif cvss_score >= 7.0:
+                priority = 'high'
+                status_text = f'Vulnérabilité Élevée (CVSS: {cvss_score})'
+            elif cvss_score >= 4.0:
+                priority = 'medium'
+                status_text = f'Vulnérabilité Moyenne (CVSS: {cvss_score})'
+            else:
+                priority = 'low'
+                status_text = f'Vulnérabilité Faible (CVSS: {cvss_score})'
+                
         # Vérification des versions impactées
         impacted_ver_text = "Détectée"
         if "Versions impactées détectées :" in description:
@@ -65,33 +110,29 @@ def analyze_alert(alert):
                         spec_ok = True
                         for part in parts:
                             part_matched = False
-                            if part.startswith('<=') or part.startswith('&lt;='):
-                                v_str = part.replace('<=', '').replace('&lt;=', '').strip()
-                                v = parse_version_safe(v_str)
-                                if asset_ver and v and asset_ver <= v:
-                                    part_matched = True
-                            elif part.startswith('<') or part.startswith('&lt;'):
-                                v_str = part.replace('<', '').replace('&lt;', '').strip()
-                                v = parse_version_safe(v_str)
-                                if asset_ver and v and asset_ver < v:
-                                    part_matched = True
-                            elif part.startswith('>=') or part.startswith('&gt;='):
-                                v_str = part.replace('>=', '').replace('&gt;=', '').strip()
-                                v = parse_version_safe(v_str)
-                                if asset_ver and v and asset_ver >= v:
-                                    part_matched = True
-                            elif part.startswith('>') or part.startswith('&gt;'):
-                                v_str = part.replace('>', '').replace('&gt;', '').strip()
-                                v = parse_version_safe(v_str)
-                                if asset_ver and v and asset_ver > v:
-                                    part_matched = True
-                            else:
-                                if part == version_actuelle:
-                                    part_matched = True
-                                else:
-                                    v = parse_version_safe(part)
-                                    if asset_ver and v and asset_ver == v:
+                            op_match = re.match(r'^(&(?:lt|gt);=?|<=|>=|<|>)?\s*(.*)$', part)
+                            if op_match:
+                                op = op_match.group(1)
+                                v_str = op_match.group(2).strip()
+                                if not op:
+                                    if part == version_actuelle:
                                         part_matched = True
+                                    else:
+                                        v = parse_version_safe(part)
+                                        if asset_ver and v and compare_versions_normalized(asset_ver, v) == 0:
+                                            part_matched = True
+                                else:
+                                    v = parse_version_safe(v_str)
+                                    if asset_ver and v:
+                                        comp = compare_versions_normalized(asset_ver, v)
+                                        if op in ('<=', '&lt;='):
+                                            part_matched = (comp <= 0)
+                                        elif op in ('<', '&lt;'):
+                                            part_matched = (comp < 0)
+                                        elif op in ('>=', '&gt;='):
+                                            part_matched = (comp >= 0)
+                                        elif op in ('>', '&gt;'):
+                                            part_matched = (comp > 0)
                             if not part_matched:
                                 spec_ok = False
                                 break
@@ -109,14 +150,17 @@ def analyze_alert(alert):
                                 v_max_str = match_hyphen.group(2).strip()
                                 v_min = parse_version_safe(v_min_str)
                                 v_max = parse_version_safe(v_max_str)
-                                if asset_ver and v_min and v_max and v_min <= asset_ver <= v_max:
-                                    part_matched = True
+                                if asset_ver and v_min and v_max:
+                                    comp_min = compare_versions_normalized(asset_ver, v_min)
+                                    comp_max = compare_versions_normalized(asset_ver, v_max)
+                                    if comp_min >= 0 and comp_max <= 0:
+                                        part_matched = True
                             else:
                                 if part == version_actuelle:
                                     part_matched = True
                                 else:
                                     v = parse_version_safe(part)
-                                    if asset_ver and v and asset_ver == v:
+                                    if asset_ver and v and compare_versions_normalized(asset_ver, v) == 0:
                                         part_matched = True
                             if part_matched:
                                 is_vulnerable = True
