@@ -46,24 +46,25 @@ export default function Login({ backendUrl, onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-radial from-slate-900 via-brand-dark to-slate-950 p-6 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden" style={{background: 'linear-gradient(135deg, #e8f0f7 0%, #f1f6f9 40%, #dbeafe 80%, #ede9fe 100%)'}}>
       {/* Background ambient light effects */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-primary/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-primary/15 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-300/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-3/4 left-1/2 w-64 h-64 bg-blue-200/20 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 z-10 transition-all duration-300 hover:shadow-brand-primary/5">
+      <div className="w-full max-w-md bg-white/70 backdrop-blur-xl border border-white/80 rounded-2xl shadow-xl shadow-brand-primary/10 p-8 z-10 transition-all duration-300 hover:shadow-brand-primary/20 hover:shadow-2xl">
         
         {/* Brand Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="h-14 w-14 bg-brand-primary/15 rounded-xl border border-brand-primary/30 flex items-center justify-center text-white shadow-inner">
+            <div className="h-14 w-14 bg-brand-primary/10 rounded-xl border border-brand-primary/20 flex items-center justify-center shadow-sm">
               <svg className="w-8 h-8 text-brand-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
               </svg>
             </div>
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">HERAKLES IT TRACKER</h2>
-          <p className="text-xs text-white/50 mt-1.5 uppercase tracking-wider font-semibold">Suivi d'Inventaire & Vulnerabilités</p>
+          <h2 className="text-2xl font-bold tracking-tight text-brand-dark">HERAKLES IT TRACKER</h2>
+          <p className="text-xs text-brand-primary/70 mt-1.5 uppercase tracking-wider font-semibold">Suivi d'Inventaire & Vulnerabilités</p>
         </div>
 
         {/* Error Notification */}
@@ -79,11 +80,11 @@ export default function Login({ backendUrl, onLoginSuccess }) {
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-2" htmlFor="username">
+            <label className="block text-xs font-semibold text-brand-dark/60 uppercase tracking-wider mb-2" htmlFor="username">
               Nom d'utilisateur
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-white/40">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-brand-primary/50">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                 </svg>
@@ -94,7 +95,7 @@ export default function Login({ backendUrl, onLoginSuccess }) {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Ex: admin"
-                className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 hover:border-white/20 focus:border-brand-primary rounded-xl text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all"
+                className="w-full pl-11 pr-4 py-3 bg-white/60 border border-brand-border hover:border-brand-primary/40 focus:border-brand-primary rounded-xl text-brand-dark placeholder-brand-dark/30 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all"
                 disabled={loading}
                 required
               />
@@ -102,11 +103,11 @@ export default function Login({ backendUrl, onLoginSuccess }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-white/70 uppercase tracking-wider mb-2" htmlFor="password">
+            <label className="block text-xs font-semibold text-brand-dark/60 uppercase tracking-wider mb-2" htmlFor="password">
               Mot de passe
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-white/40">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-brand-primary/50">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
                 </svg>
@@ -117,7 +118,7 @@ export default function Login({ backendUrl, onLoginSuccess }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••••••"
-                className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 hover:border-white/20 focus:border-brand-primary rounded-xl text-white placeholder-white/30 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all"
+                className="w-full pl-11 pr-4 py-3 bg-white/60 border border-brand-border hover:border-brand-primary/40 focus:border-brand-primary rounded-xl text-brand-dark placeholder-brand-dark/30 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 transition-all"
                 disabled={loading}
                 required
               />
@@ -146,7 +147,7 @@ export default function Login({ backendUrl, onLoginSuccess }) {
         </form>
 
         {/* Footer info */}
-        <div className="mt-8 text-center text-[10px] text-white/35">
+        <div className="mt-8 text-center text-[10px] text-brand-dark/35">
           &copy; 2026 Groupe Herakles &bull; Système sécurisé
         </div>
       </div>
