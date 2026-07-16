@@ -11,3 +11,6 @@ resume_import.py
 patch_views.py
 .env
 .env.local
+backend/database.db
+*.db
+node-env/

@@ -289,8 +289,11 @@ def get_db_connection():
 # Helper: Récupération des vulnérabilités depuis l'API REST d'OpenCVE
 def fetch_opencve_feed(url):
     opencve_url = os.getenv('OPENCVE_URL', 'http://host.docker.internal:8000').rstrip('/')
-    opencve_user = os.getenv('OPENCVE_USER', 'admin')
-    opencve_password = os.getenv('OPENCVE_PASSWORD', 'admin')
+    opencve_user = os.getenv('OPENCVE_USER', 'api_admin')
+    opencve_password = os.getenv('OPENCVE_PASSWORD')
+    if not opencve_password:
+        print("[AVERTISSEMENT] OPENCVE_PASSWORD non défini dans l'environnement. La récupération des flux OpenCVE est désactivée.")
+        return None
     opencve_token = os.getenv('OPENCVE_TOKEN')
     
     # Format attendu : opencve://vendor/<vendor> ou opencve://product/<vendor>/<product>
@@ -1515,7 +1518,13 @@ if __name__ == '__main__':
         # 8. Synchronisation/création de l'administrateur
         from werkzeug.security import generate_password_hash
         admin_user = os.getenv('TRACKER_ADMIN_USER', 'admin')
-        admin_password = os.getenv('TRACKER_ADMIN_PASSWORD', 'admin')
+        admin_password = os.getenv('TRACKER_ADMIN_PASSWORD')
+        if not admin_password:
+            # Générer un mot de passe aléatoire sécurisé si non configuré
+            import secrets as _secrets
+            admin_password = _secrets.token_urlsafe(24)
+            print(f"[AVERTISSEMENT] TRACKER_ADMIN_PASSWORD non défini. Mot de passe aléatoire généré pour '{admin_user}'.")
+            print(f"[AVERTISSEMENT] Définissez TRACKER_ADMIN_PASSWORD dans votre fichier .env pour fixer ce mot de passe.")
         password_hash = generate_password_hash(admin_password)
         
         # On vérifie si l'admin existe
