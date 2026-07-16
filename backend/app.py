@@ -250,6 +250,9 @@ def fetch_opencve_feed(url):
     elif len(parts) >= 3 and parts[0] == 'product':
         vendor = parts[1]
         product = parts[2]
+        # Normalisation automatique pour Joomla (qui s'écrit joomlack.fr ou joomla\! dans le dictionnaire CPE)
+        if vendor.lower() == 'joomla' and product.lower() in ('joomla', 'joomla!', 'joomla\\!', 'joomla\\\\!'):
+            product = 'joomla\\!'
         api_url += f"?vendor={urllib.parse.quote(vendor)}&product={urllib.parse.quote(product)}"
         
     try:
