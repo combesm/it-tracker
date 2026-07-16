@@ -13,6 +13,8 @@ services:
       - OPENCVE_USER=${OPENCVE_USER:-admin}
       - OPENCVE_PASSWORD=${OPENCVE_PASSWORD:-admin}
       - OPENCVE_HOST_HEADER=${OPENCVE_HOST_HEADER:-}
+      - TRACKER_ADMIN_USER=${TRACKER_ADMIN_USER:-admin}
+      - TRACKER_ADMIN_PASSWORD=${TRACKER_ADMIN_PASSWORD}
     volumes:
       # Persistance de la base de données SQLite locale sur la machine hôte
       # Les données seront stockées dans un dossier local "./data" à la racine du projet

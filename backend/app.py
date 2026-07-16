@@ -5,10 +5,12 @@ import os
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import re
 import json
 import base64
+import secrets
+from werkzeug.security import check_password_hash
 from packaging.version import Version, InvalidVersion
 
 def parse_version_safe(v_str):
@@ -249,6 +251,34 @@ if db_dir and not os.path.exists(db_dir):
         print(f"Impossible de créer le dossier de base de données {db_dir} : {e}")
 
 CERT_FR_FEED_URL = "https://www.cert.ssi.gouv.fr/feed/"
+
+def validate_and_clean_url(url):
+    if not url:
+        return None
+    url = url.strip()
+    if url.lower().startswith('opencve://'):
+        parts = [p for p in url.replace('opencve://', '').split('/') if p]
+        if len(parts) >= 2 and parts[0] in ('vendor', 'product'):
+            return url
+        return None
+        
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        return None
+    if not parsed.netloc:
+        return None
+        
+    hostname = parsed.hostname
+    if not hostname:
+        return None
+        
+    hostname_lower = hostname.lower().strip()
+    if hostname_lower in ('localhost', '127.0.0.1', '::1', '0.0.0.0'):
+        return None
+    if hostname_lower.startswith('169.254.'):
+        return None
+        
+    return url
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -555,17 +585,18 @@ def fetch_rss_feed(url, xml_data=None):
         return fetch_opencve_feed(url)
     try:
         if xml_data is None:
-            if url.lower().startswith('file://'):
-                with urllib.request.urlopen(url, timeout=4) as response:
-                    xml_data = response.read()
-            else:
-                req = urllib.request.Request(
-                    url, 
-                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-                )
-                # Timeout de 4 secondes pour éviter de bloquer l'application
-                with urllib.request.urlopen(req, timeout=4) as response:
-                    xml_data = response.read()
+            clean_url = validate_and_clean_url(url)
+            if not clean_url:
+                print(f"URL de flux RSS bloquée pour des raisons de sécurité : {url}")
+                return None
+                
+            req = urllib.request.Request(
+                clean_url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+            )
+            # Timeout de 4 secondes pour éviter de bloquer l'application
+            with urllib.request.urlopen(req, timeout=4) as response:
+                xml_data = response.read()
         
         root = ET.fromstring(xml_data)
         
@@ -631,6 +662,124 @@ def fetch_rss_feed(url, xml_data=None):
         return None
 
 # Endpoints API
+
+# --- SYSTEME D'AUTHENTIFICATION ET SECURITE ---
+
+@app.before_request
+def check_auth():
+    # Autoriser les requêtes OPTIONS (CORS) sans authentification
+    if request.method == 'OPTIONS':
+        return
+        
+    path = request.path
+    # Seules les routes commençant par /api/ sont protégées
+    if not path.startswith('/api/'):
+        return
+        
+    # La route de login est publique
+    if path == '/api/login':
+        return
+        
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Unauthorized', 'message': 'Jeton de connexion requis.'}), 401
+        
+    token = auth_header.split(' ')[1]
+    
+    conn = get_db_connection()
+    session = conn.execute(
+        "SELECT username, expires_at FROM sessions WHERE token = ?;", 
+        (token,)
+    ).fetchone()
+    conn.close()
+    
+    if not session:
+        return jsonify({'error': 'Unauthorized', 'message': 'Session invalide ou expirée.'}), 401
+        
+    try:
+        expires_at = datetime.fromisoformat(session['expires_at'])
+        if expires_at < datetime.now():
+            # Supprimer la session expirée
+            conn = get_db_connection()
+            conn.execute("DELETE FROM sessions WHERE token = ?;", (token,))
+            conn.commit()
+            conn.close()
+            return jsonify({'error': 'Unauthorized', 'message': 'Session expirée.'}), 401
+    except Exception:
+        return jsonify({'error': 'Unauthorized', 'message': 'Format de session invalide.'}), 401
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:5000 http://localhost:8000;"
+    return response
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    
+    if not username or not password:
+        return jsonify({'error': 'Veuillez saisir un nom d\'utilisateur et un mot de passe.'}), 400
+        
+    conn = get_db_connection()
+    user = conn.execute("SELECT * FROM users WHERE username = ?;", (username,)).fetchone()
+    conn.close()
+    
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Identifiants incorrects.'}), 401
+        
+    # Génération du jeton de session
+    token = secrets.token_hex(32)
+    # Expiration dans 24 heures
+    expires_at = (datetime.now() + timedelta(hours=24)).isoformat()
+    
+    conn = get_db_connection()
+    conn.execute(
+        "INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?);",
+        (token, username, expires_at)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'token': token,
+        'username': username
+    })
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        conn = get_db_connection()
+        conn.execute("DELETE FROM sessions WHERE token = ?;", (token,))
+        conn.commit()
+        conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/me', methods=['GET'])
+def get_me():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'authenticated': False}), 401
+        
+    token = auth_header.split(' ')[1]
+    conn = get_db_connection()
+    session = conn.execute("SELECT username FROM sessions WHERE token = ?;", (token,)).fetchone()
+    conn.close()
+    
+    if not session:
+        return jsonify({'authenticated': False}), 401
+        
+    return jsonify({
+        'authenticated': True,
+        'username': session['username']
+    })
 
 # 1. Gestion de l'Équipe
 @app.route('/api/team', methods=['GET'])
@@ -710,11 +859,19 @@ def add_asset():
     type_licence = data.get('type_licence') or 'Perpétuelle'
     date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
     
-    # Gestion des URLs multiples
+    # Gestion des URLs multiples et validation de sécurité
     urls = data.get('urls', [])
     if isinstance(urls, str):
         urls = [urls]
-    urls = [u.strip() for u in urls if u and u.strip()]
+    urls_clean = []
+    for u in urls:
+        u_strip = u.strip()
+        if u_strip:
+            val_u = validate_and_clean_url(u_strip)
+            if not val_u:
+                return jsonify({'error': f'L\'URL "{u_strip}" est invalide ou interdite pour des raisons de sécurité. Seuls les protocoles HTTP/HTTPS (publics) et opencve:// sont autorisés.'}), 400
+            urls_clean.append(val_u)
+    urls = urls_clean
     url_rss = urls[0] if urls else None
     
     # Gestion des tags
@@ -783,11 +940,19 @@ def update_asset(asset_id):
     type_licence = data.get('type_licence') or 'Perpétuelle'
     date_expiration = (data.get('date_expiration') or '').strip() if type_licence == 'Limitée' else None
     
-    # Gestion des URLs multiples
+    # Gestion des URLs multiples et validation de sécurité
     urls = data.get('urls', [])
     if isinstance(urls, str):
         urls = [urls]
-    urls = [u.strip() for u in urls if u and u.strip()]
+    urls_clean = []
+    for u in urls:
+        u_strip = u.strip()
+        if u_strip:
+            val_u = validate_and_clean_url(u_strip)
+            if not val_u:
+                return jsonify({'error': f'L\'URL "{u_strip}" est invalide ou interdite pour des raisons de sécurité. Seuls les protocoles HTTP/HTTPS (publics) et opencve:// sont autorisés.'}), 400
+            urls_clean.append(val_u)
+    urls = urls_clean
     url_rss = urls[0] if urls else None
     
     # Gestion des tags
@@ -1003,16 +1168,18 @@ def refresh_alerts():
                 is_joomla = False
             else:
                 try:
-                    if url.lower().startswith('file://'):
-                        with urllib.request.urlopen(url, timeout=4) as response:
-                            xml_data = response.read()
-                    else:
-                        req = urllib.request.Request(
-                            url, 
-                            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as response:
-                            xml_data = response.read()
+                    clean_url = validate_and_clean_url(url)
+                    if not clean_url:
+                        print(f"URL de flux RSS bloquée pour des raisons de sécurité : {url}")
+                        unreachable_urls.append(url)
+                        continue
+                        
+                    req = urllib.request.Request(
+                        clean_url, 
+                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+                    )
+                    with urllib.request.urlopen(req, timeout=4) as response:
+                        xml_data = response.read()
                 except Exception as e:
                     print(f"Erreur de récupération de l'URL ({url}): {e}")
                     unreachable_urls.append(url)
@@ -1326,6 +1493,39 @@ if __name__ == '__main__':
             conn.execute("ALTER TABLE assets ADD COLUMN tags TEXT DEFAULT '';")
         except sqlite3.OperationalError:
             pass
+            
+        # 6. Table users
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        );
+        """)
+        
+        # 7. Table sessions
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        """)
+        
+        # 8. Synchronisation/création de l'administrateur
+        from werkzeug.security import generate_password_hash
+        admin_user = os.getenv('TRACKER_ADMIN_USER', 'admin')
+        admin_password = os.getenv('TRACKER_ADMIN_PASSWORD', 'admin')
+        password_hash = generate_password_hash(admin_password)
+        
+        # On vérifie si l'admin existe
+        existing = conn.execute("SELECT id, password_hash FROM users WHERE username = ?;", (admin_user,)).fetchone()
+        if not existing:
+            conn.execute("INSERT INTO users (username, password_hash) VALUES (?, ?);", (admin_user, password_hash))
+            print(f"Compte administrateur créé : {admin_user}")
+        else:
+            conn.execute("UPDATE users SET password_hash = ? WHERE username = ?;", (password_hash, admin_user))
+            print(f"Compte administrateur synchronisé avec l'environnement : {admin_user}")
             
         conn.commit()
         conn.close()

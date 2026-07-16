@@ -50,7 +50,7 @@ Exécutez simplement la commande suivante à la racine du dossier du projet :
 
 ## 🔐 Gestion des Secrets & Fichier `.env`
 
-Le backend de l'IT-Tracker a besoin des identifiants API d'OpenCVE pour s'y connecter de manière sécurisée. Ces accès sont configurés dans le fichier `.env` situé à la racine du projet.
+Le backend de l'IT-Tracker a besoin des identifiants API d'OpenCVE pour s'y connecter de manière sécurisée, ainsi que de ses propres identifiants d'administration pour restreindre l'accès à l'inventaire. Ces accès sont configurés dans le fichier `.env` situé à la racine du projet.
 
 ### Fichier `.env` type :
 ```ini
@@ -59,27 +59,36 @@ OPENCVE_URL=http://opencve-webserver:8000/opencve
 OPENCVE_USER=api_admin
 OPENCVE_PASSWORD=<mot_de_passe_généré>
 OPENCVE_HOST_HEADER=<adresse_ip_du_serveur>
+
+# Informations d'administration de l'IT-Tracker
+TRACKER_ADMIN_USER=admin
+TRACKER_ADMIN_PASSWORD=<mot_de_passe_généré>
 ```
 
-### 🔑 Comment récupérer ou réinitialiser les secrets OpenCVE ?
+### 🔑 Comment récupérer ou réinitialiser les secrets ?
 
-1. **À la première installation** :
-   Le script `deploy-all.sh` génère automatiquement un mot de passe sécurisé aléatoire de 32 caractères pour l'utilisateur API administrateur (`api_admin`).
-   - Il sauvegarde ces identifiants dans un fichier sécurisé nommé **`opencve_api_creds.txt`** à la racine du projet.
-   - Il remplit automatiquement le fichier `.env` avec ces informations d'accès. Vous n'avez rien à faire !
+1. **Identifiants de l'IT-Tracker** :
+   Le script `deploy-all.sh` génère automatiquement un mot de passe sécurisé aléatoire de 32 caractères pour l'utilisateur administrateur (`admin`) de l'IT-Tracker.
+   - Il sauvegarde ces identifiants dans le fichier **`it_tracker_creds.txt`** à la racine du projet.
+   - Il remplit automatiquement le fichier `.env` avec ces informations d'accès.
+   - Pour les réinitialiser, modifiez le mot de passe dans `it_tracker_creds.txt` et relancez `./deploy-all.sh`.
 
-2. **Lecture manuelle des secrets** :
-   Si vous devez reconnecter manuellement le backend ou récupérer le mot de passe, lisez le fichier d'identification :
-   ```bash
-   cat opencve_api_creds.txt
-   ```
+2. **Identifiants OpenCVE** :
+   Le script `deploy-all.sh` génère également un mot de passe sécurisé aléatoire pour l'utilisateur de l'API OpenCVE (`api_admin`).
+   - Il sauvegarde ces identifiants dans le fichier **`opencve_api_creds.txt`** à la racine du projet.
+   - Si vous égarez les identifiants ou souhaitez créer un autre administrateur, utilisez la CLI d'OpenCVE embarquée dans le conteneur Docker :
+     ```bash
+     docker exec -it opencve-webserver opencve create-user <nom_utilisateur> <email> --admin
+     ```
 
-3. **Génération manuelle d'un nouvel utilisateur dans OpenCVE** :
-   Si vous égarez les identifiants ou souhaitez créer un autre administrateur, utilisez la CLI d'OpenCVE embarquée dans le conteneur Docker :
-   ```bash
-   docker exec -it opencve-webserver opencve create-user <nom_utilisateur> <email> --admin
-   ```
-   *Le conteneur vous demandera de saisir et de confirmer le nouveau mot de passe de manière sécurisée.*
+### 🛡️ Sécurité de l'Application IT-Tracker
+
+L'application intègre plusieurs couches de protection :
+- **Authentification sécurisée par jeton** : Tous les endpoints d'API (sauf `/api/login` et les ressources du frontend) requièrent un en-tête `Authorization: Bearer <token>` valide. Les jetons de session ont une durée de validité de 24 heures et sont stockés de manière sécurisée en base de données.
+- **Hachage des mots de passe** : Les mots de passe sont hachés de manière sécurisée en utilisant `werkzeug.security` (PBKDF2/SHA-256).
+- **Protection contre le LFI (Local File Inclusion)** : Le protocole `file://` est strictement bloqué lors du traitement des flux RSS.
+- **Protection contre le SSRF (Server-Side Request Forgery)** : Les requêtes HTTP/HTTPS vers les adresses de boucle locale (`localhost`, `127.0.0.1`, `::1`) ou les adresses de métadonnées de cloud (`169.254.169.254`) sont explicitement bloquées lors du traitement des flux.
+- **En-têtes de sécurité HTTP** : L'application renvoie systématiquement les en-têtes `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, et une politique de sécurité du contenu (`Content-Security-Policy`) restrictive.
 
 ---
 

@@ -1,18 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Assets from './components/Assets';
 import Team from './components/Team';
 import History from './components/History';
+import Login from './components/Login';
 import * as XLSX from 'xlsx';
 
 // Utiliser localhost:5000 en dev, et l'origine courante en prod (servie par Flask)
 const BACKEND_URL = import.meta.env.DEV ? 'http://localhost:5000' : '';
 
 export default function App() {
+  const [token, setToken] = useState(localStorage.getItem('tracker_token'));
   const [activeTab, setActiveTab] = useState('dashboard');
   // Compteur fictif pour forcer le rafraîchissement des formulaires liés à l'équipe
   const [teamRefreshKey, setTeamRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleAuthFailed = () => {
+      setToken(null);
+    };
+    window.addEventListener('auth-failed', handleAuthFailed);
+    return () => window.removeEventListener('auth-failed', handleAuthFailed);
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${BACKEND_URL}/api/logout`, { method: 'POST' });
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+    localStorage.removeItem('tracker_token');
+    localStorage.removeItem('tracker_username');
+    setToken(null);
+  };
 
   const handleTeamChange = () => {
     setTeamRefreshKey(prev => prev + 1);
@@ -94,10 +115,14 @@ export default function App() {
     }
   };
 
+  if (!token) {
+    return <Login backendUrl={BACKEND_URL} onLoginSuccess={(t) => setToken(t)} />;
+  }
+
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans">
-      {/* Sidebar de navigation latérale fixe avec prop d'export */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onExport={handleExportExcel} />
+      {/* Sidebar de navigation latérale fixe avec prop d'export et de déconnexion */}
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onExport={handleExportExcel} onLogout={handleLogout} />
 
       {/* Zone de contenu principale décalée à droite de la Sidebar */}
       <main className="pl-64 min-h-screen">

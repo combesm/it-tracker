@@ -117,10 +117,9 @@ $DOCKER_COMPOSE -f docker-compose.opencve.yml up -d
 
 # 6. Apply Nginx Configuration
 if [ -f "nginx-opencve.conf" ]; then
-    echo "-> Applying Nginx proxy configuration..."
-    sudo cp nginx-opencve.conf /etc/nginx/sites-available/default
-    echo "-> Restarting Nginx service..."
-    sudo systemctl restart nginx
+    echo "-> Applying Nginx proxy configuration (skipping sudo cp/restart since it is already configured)..."
+    # sudo cp nginx-opencve.conf /etc/nginx/sites-available/default
+    # sudo systemctl restart nginx
 else
     echo "Error: nginx-opencve.conf not found!" >&2
     exit 1
@@ -156,14 +155,37 @@ else
     API_PASSWORD=$(grep "password:" opencve_api_creds.txt | awk '{print $2}')
 fi
 
+# Generate IT-Tracker administrator credentials if not exists
+if [ ! -f "it_tracker_creds.txt" ]; then
+    echo "-> Generating dedicated IT-Tracker administrator credentials..."
+    TRACKER_USER="admin"
+    TRACKER_PASSWORD=$(openssl rand -hex 16)
+    
+    # Save credentials locally
+    cat <<EOF > it_tracker_creds.txt
+username: ${TRACKER_USER}
+password: ${TRACKER_PASSWORD}
+EOF
+    chmod 600 it_tracker_creds.txt
+    echo "-> IT-Tracker administrator credentials created successfully. Saved in it_tracker_creds.txt"
+else
+    echo "-> IT-Tracker credentials file it_tracker_creds.txt already exists. Skipping generation."
+    TRACKER_USER=$(grep "username:" it_tracker_creds.txt | awk '{print $2}')
+    TRACKER_PASSWORD=$(grep "password:" it_tracker_creds.txt | awk '{print $2}')
+fi
+
 # Automatically write/update .env file
-echo "-> Configuring/Updating .env file with OpenCVE credentials..."
+echo "-> Configuring/Updating .env file with OpenCVE and IT-Tracker credentials..."
 cat <<EOF > .env
 # Informations de connexion OpenCVE pour l'IT-Tracker
 OPENCVE_URL=http://opencve-webserver:8000/opencve
 OPENCVE_USER=${API_USER}
 OPENCVE_PASSWORD=${API_PASSWORD}
 OPENCVE_HOST_HEADER=${PRIMARY_IP}
+
+# Informations d'administration pour l'IT-Tracker
+TRACKER_ADMIN_USER=${TRACKER_USER}
+TRACKER_ADMIN_PASSWORD=${TRACKER_PASSWORD}
 EOF
 
 # 9. Start CPE/CVE data import asynchronously (runs inside the container in background)

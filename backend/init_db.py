@@ -81,6 +81,36 @@ def init_db():
     );
     """)
 
+    # Table Users
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL
+    );
+    """)
+
+    # Table Sessions
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        token TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    );
+    """)
+
+    # Insertion de l'administrateur par défaut
+    import os
+    from werkzeug.security import generate_password_hash
+    admin_user = os.getenv('TRACKER_ADMIN_USER', 'admin')
+    admin_password = os.getenv('TRACKER_ADMIN_PASSWORD', 'admin')
+    password_hash = generate_password_hash(admin_password)
+    try:
+        cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?);", (admin_user, password_hash))
+        print(f"Compte administrateur initial créé : {admin_user}")
+    except sqlite3.IntegrityError:
+        pass
+
     # Insertion des données de test
     print("Insertion des données de test...")
     # Membres de l'équipe
