@@ -77,6 +77,7 @@ def init_db():
         resolved INTEGER DEFAULT 0,
         trigger_url TEXT,
         is_secondary INTEGER DEFAULT 0,
+        resolved_at_version TEXT,
         FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
     );
     """)
