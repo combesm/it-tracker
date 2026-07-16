@@ -991,11 +991,10 @@ def refresh_alerts():
         if not urls_rows:
             continue
             
-        triggered_alerts = []
-        
         for u_row in urls_rows:
             url = u_row['url']
             is_primary = u_row['is_primary']
+            triggered_alerts = []
             xml_data = None
             
             if url.lower().startswith('opencve://'):
