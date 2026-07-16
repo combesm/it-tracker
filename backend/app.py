@@ -471,18 +471,30 @@ def fetch_opencve_feed(url):
                     continue
                     
                 versions_list = []
-                # Gérer versions explicites
+                # Gérer versions et plages d'impact explicites
                 for v_item in data_item.get('versions') or []:
                     v_val = v_item.get('version')
-                    if v_val and v_val != 'n/a':
-                        versions_list.append(v_val)
-                    # Gérer les attributs lessThanOrEqual/lessThan des modèles récents NVD
                     lte_val = v_item.get('lessThanOrEqual')
                     lt_val = v_item.get('lessThan')
-                    if lte_val:
-                        versions_list.append(f"<= {lte_val}")
-                    elif lt_val:
-                        versions_list.append(f"< {lt_val}")
+                    
+                    if v_val and v_val != 'n/a':
+                        if lte_val:
+                            if v_val == '0':
+                                versions_list.append(f"<= {lte_val}")
+                            else:
+                                versions_list.append(f">= {v_val}, <= {lte_val}")
+                        elif lt_val:
+                            if v_val == '0':
+                                versions_list.append(f"< {lt_val}")
+                            else:
+                                versions_list.append(f">= {v_val}, < {lt_val}")
+                        else:
+                            versions_list.append(v_val)
+                    else:
+                        if lte_val:
+                            versions_list.append(f"<= {lte_val}")
+                        elif lt_val:
+                            versions_list.append(f"< {lt_val}")
                         
                 if not versions_list:
                     for cpe_str in data_item.get('cpes') or []:
