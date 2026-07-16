@@ -1,6 +1,6 @@
-# 🛡️ Herakles IT Tracker & OpenCVE - Guide de Déploiement et d'Administration
+# 🛡️ IT Tracker & OpenCVE - Guide de Déploiement et d'Administration
 
-Bienvenue dans le guide complet d'installation, de configuration et d'administration de la suite **Herakles IT Tracker** et de son connecteur de sécurité natif **OpenCVE**.
+Bienvenue dans le guide complet d'installation, de configuration et d'administration de la suite **IT Tracker** et de son connecteur de sécurité natif **OpenCVE**.
 
 Ce document explique en détail l'architecture, la configuration de l'environnement, le fonctionnement d'OpenCVE, la gestion des secrets et fournit une **analyse complète de la portabilité** pour installer ce système sur n'importe quel autre serveur.
 
