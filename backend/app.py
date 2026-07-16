@@ -307,104 +307,146 @@ def fetch_opencve_feed(url):
         with urllib.request.urlopen(req, timeout=4) as response:
             return response.read()
 
-    # Tentative d'appel direct
-    raw_results = []
-    direct_success = False
+    # Toujours combiner l'appel direct et la recherche de fallback
+    candidates = {}
+    
+    # 1. Appel direct
     try:
         res_data = perform_request(api_url)
         cve_list = json.loads(res_data)
+        search_list = []
         if isinstance(cve_list, dict) and 'results' in cve_list:
-            raw_results = cve_list['results']
+            search_list = cve_list['results']
         elif isinstance(cve_list, list):
-            raw_results = cve_list
-        direct_success = len(raw_results) > 0
+            search_list = cve_list
+        for cve_sum in search_list:
+            if 'id' in cve_sum:
+                candidates[cve_sum['id']] = cve_sum
     except Exception as e:
         print(f"Erreur d'appel direct OpenCVE ({api_url}) : {e}")
 
-    # Fallback si l'appel direct a renvoyé 0 résultat ou une erreur
-    if not direct_success:
-        print(f"L'appel direct OpenCVE a renvoyé 0 résultat. Tentative de recherche fallback...")
-        search_terms = []
-        if vendor and len(vendor) >= 3:
-            search_terms.append(vendor)
-        if product:
-            p_parts = [p for p in re.split(r'[-_]', product) if p]
-            if p_parts and len(p_parts[0]) >= 3:
-                search_terms.append(p_parts[0])
+    # 2. Recherche complémentaire par mot-clé
+    search_terms = []
+    if vendor and len(vendor) >= 3:
+        search_terms.append(vendor)
+    if product:
+        p_parts = [p for p in re.split(r'[-_ ]', product) if p]
+        if p_parts and len(p_parts[0]) >= 3:
+            search_terms.append(p_parts[0])
+            
+    for term in search_terms:
+        try:
+            search_url = f"{opencve_url}/api/cve?search={urllib.parse.quote(term)}"
+            search_data_bytes = perform_request(search_url)
+            search_data = json.loads(search_data_bytes)
+            search_list = []
+            if isinstance(search_data, dict) and 'results' in search_data:
+                search_list = search_data['results']
+            elif isinstance(search_data, list):
+                search_list = search_data
                 
-        candidates = {}
-        for term in search_terms:
-            try:
-                search_url = f"{opencve_url}/api/cve?search={urllib.parse.quote(term)}"
-                search_data_bytes = perform_request(search_url)
-                search_data = json.loads(search_data_bytes)
-                search_list = []
-                if isinstance(search_data, dict) and 'results' in search_data:
-                    search_list = search_data['results']
-                elif isinstance(search_data, list):
-                    search_list = search_data
-                    
-                for cve_sum in search_list:
-                    if 'id' in cve_sum:
-                        candidates[cve_sum['id']] = cve_sum
-            except Exception as e_search:
-                print(f"Erreur de recherche fallback pour {term}: {e_search}")
-                
-        # Filtrage des candidats par le contenu de raw_nvd_data
-        for cve_id, cve_sum in candidates.items():
-            try:
-                detail_url = f"{opencve_url}/api/cve/{cve_id}"
-                detail_data_bytes = perform_request(detail_url)
-                cve_detail = json.loads(detail_data_bytes)
-            except Exception as e_detail:
-                print(f"Erreur de récupération détails pour {cve_id} (fallback): {e_detail}")
-                continue
-                
-            raw_nvd = cve_detail.get('raw_nvd_data') or {}
-            affected_list = raw_nvd.get('affected') or []
-            matched = False
+            for cve_sum in search_list:
+                if 'id' in cve_sum:
+                    candidates[cve_sum['id']] = cve_sum
+        except Exception as e_search:
+            print(f"Erreur de recherche complémentaire pour {term}: {e_search}")
+
+    # Helper de normalisation de chaîne pour tolérer les variations mineures (suffixes client, project, cms, .com, etc.)
+    def normalize_name(name):
+        if not name:
+            return ""
+        n = name.lower()
+        # Supprimer les extensions de domaine (.fr, .org, .com etc)
+        n = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', n)
+        # Supprimer les suffixes / mots clés génériques
+        n = re.sub(r'\b(client|server|project|cms|extension|plugin|theme|module|software|app|application|framework)\b', '', n)
+        # Remplacer les caractères non-alphanumériques par du vide
+        n = re.sub(r'[^a-z0-9]', '', n)
+        return n
+
+    # Filtrer les candidats
+    norm_vendor = normalize_name(vendor)
+    norm_product = normalize_name(product)
+    
+    filtered_results = []
+    
+    for cve_id, cve_sum in candidates.items():
+        try:
+            detail_url = f"{opencve_url}/api/cve/{cve_id}"
+            detail_data_bytes = perform_request(detail_url)
+            cve_detail = json.loads(detail_data_bytes)
+        except Exception as e_detail:
+            print(f"Erreur de récupération détails pour {cve_id} (fallback): {e_detail}")
+            continue
+            
+        raw_nvd = cve_detail.get('raw_nvd_data') or {}
+        affected_list = raw_nvd.get('affected') or []
+        matched = False
+        
+        if not affected_list:
+            # Si pas de liste d'affected, on cherche dans le résumé
+            summary = cve_sum.get('summary') or ''
+            if product:
+                if product.lower() in summary.lower() or (vendor and vendor.lower() in summary.lower()):
+                    matched = True
+            else:
+                if vendor and vendor.lower() in summary.lower():
+                    matched = True
+        else:
             for aff in affected_list:
                 aff_data = aff.get('affectedData') or []
                 for data_item in aff_data:
                     v_val = data_item.get('vendor')
                     p_val = data_item.get('product')
-                    if not v_val or not p_val:
+                    if not v_val:
                         continue
-                    if query_type == 'product' and vendor and product:
-                        if v_val.lower() == vendor.lower() and p_val.lower() == product.lower():
+                    norm_v_val = normalize_name(v_val)
+                    norm_p_val = normalize_name(p_val)
+                    
+                    if product:
+                        if (norm_vendor in norm_v_val or norm_v_val in norm_vendor) and (norm_product in norm_p_val or norm_p_val in norm_product):
                             matched = True
                             break
                     else:
-                        if v_val.lower() == vendor.lower():
+                        if norm_vendor in norm_v_val or norm_v_val in norm_vendor:
                             matched = True
                             break
                 if matched:
                     break
-            if matched:
-                raw_results.append(cve_sum)
+                    
+        if matched:
+            # On conserve le detail de la CVE dans l'objet pour éviter un second fetch en dessous
+            cve['_cached_detail'] = cve_detail
+            filtered_results.append(cve_sum)
 
     # Récupérer les détails et construire la liste d'alertes finale
     items = []
-    for cve in raw_results:
+    for cve in filtered_results:
         cve_id = cve.get('id') or 'CVE-Unknown'
         summary = cve.get('summary') or 'Aucun résumé fourni.'
         pub_date = cve.get('published_at') or cve.get('updated_at') or ''
         
         cvss_score = None
         cvss_severity = None
-        detail_url = f"{opencve_url}/api/cve/{cve_id}"
         
-        cve_detail = {}
-        try:
-            d_resp_data = perform_request(detail_url)
-            cve_detail = json.loads(d_resp_data)
-            
-            cvss_dict = cve_detail.get('cvss') or {}
-            cvss_score = cvss_dict.get('v3')
-            if cvss_score is None:
-                cvss_score = cvss_dict.get('v2')
-            
-            if cvss_score is not None:
+        # Récupérer depuis le cache ou fetcher au besoin
+        cve_detail = cve.get('_cached_detail')
+        if not cve_detail:
+            detail_url = f"{opencve_url}/api/cve/{cve_id}"
+            try:
+                d_resp_data = perform_request(detail_url)
+                cve_detail = json.loads(d_resp_data)
+            except Exception as e_detail:
+                print(f"Erreur de récupération tardive des détails pour {cve_id}: {e_detail}")
+                cve_detail = {}
+                
+        cvss_dict = cve_detail.get('cvss') or {}
+        cvss_score = cvss_dict.get('v3')
+        if cvss_score is None:
+            cvss_score = cvss_dict.get('v2')
+        
+        if cvss_score is not None:
+            try:
                 cvss_score = float(cvss_score)
                 if cvss_score >= 9.0:
                     cvss_severity = "CRITICAL"
@@ -414,8 +456,8 @@ def fetch_opencve_feed(url):
                     cvss_severity = "MEDIUM"
                 else:
                     cvss_severity = "LOW"
-        except Exception as e_detail:
-            print(f"Erreur de récupération des détails pour {cve_id}: {e_detail}")
+            except ValueError:
+                cvss_score = None
             
         affected_vers = []
         raw_nvd = cve_detail.get('raw_nvd_data') or {}
@@ -429,10 +471,18 @@ def fetch_opencve_feed(url):
                     continue
                     
                 versions_list = []
+                # Gérer versions explicites
                 for v_item in data_item.get('versions') or []:
                     v_val = v_item.get('version')
                     if v_val and v_val != 'n/a':
                         versions_list.append(v_val)
+                    # Gérer les attributs lessThanOrEqual/lessThan des modèles récents NVD
+                    lte_val = v_item.get('lessThanOrEqual')
+                    lt_val = v_item.get('lessThan')
+                    if lte_val:
+                        versions_list.append(f"<= {lte_val}")
+                    elif lt_val:
+                        versions_list.append(f"< {lt_val}")
                         
                 if not versions_list:
                     for cpe_str in data_item.get('cpes') or []:
