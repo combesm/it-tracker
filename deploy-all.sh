@@ -115,6 +115,24 @@ echo "-> Starting OpenCVE Docker stack..."
 $DOCKER_COMPOSE -f docker-compose.opencve.yml build
 $DOCKER_COMPOSE -f docker-compose.opencve.yml up -d
 
+# Check if Uptime Kuma is enabled in existing environment/config
+ENABLE_UPTIME_KUMA="true"
+if [ -f .env ]; then
+    ENV_VAL=$(grep -E "^ENABLE_UPTIME_KUMA=" .env | cut -d'=' -f2 | tr -d '\r')
+    if [ "$ENV_VAL" = "false" ]; then
+        ENABLE_UPTIME_KUMA="false"
+    fi
+fi
+
+if [ "$ENABLE_UPTIME_KUMA" = "true" ]; then
+    echo "-> Starting Uptime Kuma Docker stack..."
+    mkdir -p uptime_data
+    $DOCKER_COMPOSE -f docker-compose.uptime.yml up -d
+else
+    echo "-> Uptime Kuma is disabled. Stopping container if running..."
+    $DOCKER_COMPOSE -f docker-compose.uptime.yml down 2>/dev/null || true
+fi
+
 # 6. Apply Nginx Configuration
 if [ -f "nginx-opencve.conf" ]; then
     echo "-> Applying Nginx proxy configuration (skipping sudo cp/restart since it is already configured)..."
@@ -176,6 +194,14 @@ fi
 
 # Automatically write/update .env file
 echo "-> Configuring/Updating .env file with OpenCVE and IT-Tracker credentials..."
+PREV_UPTIME_KUMA="true"
+if [ -f .env ]; then
+    ENV_VAL=$(grep -E "^ENABLE_UPTIME_KUMA=" .env | cut -d'=' -f2 | tr -d '\r')
+    if [ "$ENV_VAL" = "false" ]; then
+        PREV_UPTIME_KUMA="false"
+    fi
+fi
+
 cat <<EOF > .env
 # Informations de connexion OpenCVE pour l'IT-Tracker
 OPENCVE_URL=http://opencve-webserver:8000/opencve
@@ -186,6 +212,9 @@ OPENCVE_HOST_HEADER=${PRIMARY_IP}
 # Informations d'administration pour l'IT-Tracker
 TRACKER_ADMIN_USER=${TRACKER_USER}
 TRACKER_ADMIN_PASSWORD=${TRACKER_PASSWORD}
+
+# Intégration Uptime Kuma
+ENABLE_UPTIME_KUMA=${PREV_UPTIME_KUMA}
 EOF
 
 # 9. Start CPE/CVE data import asynchronously (runs inside the container in background)
@@ -196,6 +225,9 @@ echo "=========================================================="
 echo "   Deployment Complete!"
 echo "   - Inventory App: http://${PRIMARY_IP}/"
 echo "   - OpenCVE: http://${PRIMARY_IP}/opencve/"
+if [ "$ENABLE_UPTIME_KUMA" = "true" ]; then
+echo "   - Uptime Kuma: http://${PRIMARY_IP}/uptime/"
+fi
 echo "=========================================================="
 echo "   To view import logs run: docker logs -f opencve-webserver"
 echo "=========================================================="

@@ -2,7 +2,7 @@ import React from 'react';
 
 const OPENCVE_URL = '/opencve/cve';
 
-export default function Sidebar({ activeTab, setActiveTab, onExport, onLogout }) {
+export default function Sidebar({ activeTab, setActiveTab, onExport, onLogout, config = { enable_uptime_kuma: false, enable_opencve: false } }) {
   const menuItems = [
     {
       id: 'dashboard',
@@ -53,6 +53,17 @@ export default function Sidebar({ activeTab, setActiveTab, onExport, onLogout })
     )
   };
 
+  const uptimeKumaItem = {
+    id: 'uptime',
+    label: 'Uptime',
+    url: `${window.location.protocol}//${window.location.hostname}:3001`,
+    icon: (
+      <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+      </svg>
+    )
+  };
+
   return (
     <aside className="fixed inset-y-0 left-0 w-64 bg-brand-dark text-white flex flex-col z-20 border-r border-brand-border/10">
       {/* Sidebar Header */}
@@ -81,18 +92,36 @@ export default function Sidebar({ activeTab, setActiveTab, onExport, onLogout })
         })}
 
         {/* Lien externe OpenCVE */}
-        <a
-          href={openCVEItem.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 text-white/75 hover:bg-white/5 hover:text-white"
-        >
-          {openCVEItem.icon}
-          {openCVEItem.label}
-          <svg className="w-3 h-3 ml-auto opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-          </svg>
-        </a>
+        {config.enable_opencve && (
+          <a
+            href={openCVEItem.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 text-white/75 hover:bg-white/5 hover:text-white"
+          >
+            {openCVEItem.icon}
+            {openCVEItem.label}
+            <svg className="w-3 h-3 ml-auto opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+            </svg>
+          </a>
+        )}
+
+        {/* Lien externe Uptime Kuma */}
+        {config.enable_uptime_kuma && (
+          <a
+            href={uptimeKumaItem.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-150 text-white/75 hover:bg-white/5 hover:text-white"
+          >
+            {uptimeKumaItem.icon}
+            {uptimeKumaItem.label}
+            <svg className="w-3 h-3 ml-auto opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+            </svg>
+          </a>
+        )}
       </nav>
 
       {/* Action: Export Excel */}

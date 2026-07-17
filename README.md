@@ -12,15 +12,18 @@ La suite est orchestrée sous forme de conteneurs Docker reliés par un réseau 
 
 ```mermaid
 graph TD
-    Client[Navigateur Web de l'Administrateur] -->|Port 80| NginxHost[Nginx Proxy Hôte]
-    NginxHost -->|/| ITTracker[Conteneur IT Tracker : Flask & React]
-    NginxHost -->|/opencve| OpenCVEWeb[Conteneur OpenCVE Webserver]
+    Client[Navigateur Web de l'Administrateur] -->|Port 80| NginxHost80[Nginx Hôte : Port 80]
+    Client -->|Port 3001| NginxHost3001[Nginx Hôte : Port 3001]
+    NginxHost80 -->|/| ITTracker[Conteneur IT Tracker : Flask & React]
+    NginxHost80 -->|/opencve| OpenCVEWeb[Conteneur OpenCVE Webserver]
+    NginxHost3001 -->|/| UptimeKuma[Conteneur Uptime Kuma : Port local 3002]
     ITTracker -->|API REST local| OpenCVEWeb
     OpenCVEWeb -->|Celery Workers| CeleryWorker[OpenCVE Celery Worker]
     OpenCVEWeb -->|Celery Beat| CeleryBeat[OpenCVE Celery Beat]
     OpenCVEWeb -->|Stockage DB| Postgres[PostgreSQL OpenCVE]
     OpenCVEWeb -->|Cache/Brokers| Redis[Redis OpenCVE]
     ITTracker -->|Persistant Bind Mount| SQLite[(database.db sur Hôte)]
+    UptimeKuma -->|Persistant Bind Mount| KumaDB[(mariadb/ sur Hôte)]
 ```
 
 ### 📋 Portabilité de la solution
@@ -63,6 +66,9 @@ OPENCVE_HOST_HEADER=<adresse_ip_du_serveur>
 # Informations d'administration de l'IT-Tracker
 TRACKER_ADMIN_USER=admin
 TRACKER_ADMIN_PASSWORD=<mot_de_passe_généré>
+
+# Intégration Uptime Kuma (Optionnelle)
+ENABLE_UPTIME_KUMA=true
 ```
 
 ### 🔑 Comment récupérer ou réinitialiser les secrets ?
@@ -140,6 +146,8 @@ cd /var/www/it-tracker/
   ```bash
   tar -xzvf opencve_backup.tar.gz
   ```
+- **Conserver ou migrer les données d'Uptime Kuma** :
+  Si vous utilisez Uptime Kuma et souhaitez migrer ses configurations (sondes, notifications, etc.), copiez le contenu du dossier `uptime_data/` (contenant la configuration et le dossier de base de données `mariadb/`) de l'ancien serveur/instance vers le nouveau dossier `./uptime_data/` avant de lancer `./deploy-all.sh`.
 
 ---
 
@@ -160,3 +168,4 @@ cd /var/www/it-tracker/
 *   **Accès aux interfaces web** :
     - **IT-Tracker** : `http://<IP_DU_SERVEUR>/`
     - **Console OpenCVE** : `http://<IP_DU_SERVEUR>/opencve/`
+    - **Uptime Kuma** : `http://<IP_DU_SERVEUR>:3001/`

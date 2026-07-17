@@ -15,12 +15,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   // Compteur fictif pour forcer le rafraîchissement des formulaires liés à l'équipe
   const [teamRefreshKey, setTeamRefreshKey] = useState(0);
+  const [config, setConfig] = useState({ enable_uptime_kuma: false, enable_opencve: false });
 
   useEffect(() => {
     const handleAuthFailed = () => {
       setToken(null);
     };
     window.addEventListener('auth-failed', handleAuthFailed);
+
+    fetch(`${BACKEND_URL}/api/config`)
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Failed to load config');
+      })
+      .then(data => setConfig(data))
+      .catch(err => console.error("Error loading config:", err));
+
     return () => window.removeEventListener('auth-failed', handleAuthFailed);
   }, []);
 
@@ -122,7 +132,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans">
       {/* Sidebar de navigation latérale fixe avec prop d'export et de déconnexion */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onExport={handleExportExcel} onLogout={handleLogout} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onExport={handleExportExcel} onLogout={handleLogout} config={config} />
 
       {/* Zone de contenu principale décalée à droite de la Sidebar */}
       <main className="pl-64 min-h-screen">

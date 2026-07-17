@@ -14,3 +14,5 @@ patch_views.py
 backend/database.db
 *.db
 node-env/
+uptime_data/
+
