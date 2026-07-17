@@ -451,13 +451,25 @@ def fetch_opencve_feed(url):
         n = re.sub(r'[^a-z0-9]', '', n)
         return n
 
+    # Récupérer les alertes existantes pour ce flux afin d'éviter les doubles fetches
+    conn = get_db_connection()
+    existing_titles = [row['title'] for row in conn.execute("SELECT title FROM alerts WHERE trigger_url = ?;", (url,)).fetchall()]
+    conn.close()
+
     # Filtrer les candidats
     norm_vendor = normalize_name(vendor)
     norm_product = normalize_name(product)
     
     filtered_results = []
     
-    for cve_id, cve_sum in candidates.items():
+    # Limiter le nombre de candidats évalués pour éviter les timeouts
+    candidates_items = list(candidates.items())[:10]
+    
+    for cve_id, cve_sum in candidates_items:
+        # Optimisation : si la CVE est déjà connue (présente dans le titre d'une alerte existante), on passe
+        if any(cve_id in t for t in existing_titles):
+            continue
+            
         try:
             detail_url = f"{opencve_url}/api/cve/{cve_id}"
             detail_data_bytes = perform_request(detail_url)
@@ -779,8 +791,8 @@ def check_auth():
     if not path.startswith('/api/'):
         return
         
-    # La route de login est publique
-    if path == '/api/login':
+    # La route de login et de config sont publiques
+    if path in ('/api/login', '/api/config'):
         return
         
     auth_header = request.headers.get('Authorization')
@@ -818,6 +830,13 @@ def add_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:5000 http://localhost:8000;"
     return response
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    return jsonify({
+        'enable_uptime_kuma': os.getenv('ENABLE_UPTIME_KUMA', 'false').lower() == 'true',
+        'enable_opencve': os.getenv('OPENCVE_URL') is not None and os.getenv('OPENCVE_URL') != ''
+    })
 
 @app.route('/api/login', methods=['POST'])
 def login():
