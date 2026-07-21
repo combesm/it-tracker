@@ -121,7 +121,7 @@ Si vous devez transférer ou installer l'IT-Tracker sur un serveur physique ou v
 ### Étape 1 : Copier le projet sur le nouveau serveur
 Archivez et transférez l'intégralité du répertoire du projet (par exemple via rsync ou scp) :
 ```bash
-rsync -avz --exclude="venv" --exclude="node-env" --exclude="node_modules" /home/rustdesk-host/IT-TRACKER/ user@nouveau-serveur:/var/www/it-tracker/
+rsync -avz --exclude="venv" --exclude="node-env" --exclude="node_modules" /home/host/IT-TRACKER/ user@nouveau-serveur:/var/www/it-tracker/
 ```
 
 ### Étape 2 : Lancer le script d'installation automatique
