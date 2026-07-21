@@ -1444,25 +1444,39 @@ def refresh_alerts():
                                 'is_secondary': 0 if is_primary else 1
                             })
 
-            # Gérer l'insertion, la mise à jour et la résolution des alertes pour cette URL
+            # Gérer la résolution automatique des alertes obsolètes et le maintien des alertes encore vulnérables
+            existing_active = conn.execute("""
+                SELECT id, title, description FROM alerts
+                WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
+            """, (asset_id, url)).fetchall()
+            
             active_titles = {a['title'] for a in triggered_alerts}
             
-            if not active_titles:
-                conn.execute("""
-                    UPDATE alerts 
-                    SET resolved = 1 
-                    WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
-                """, (asset_id, url))
-            else:
-                placeholders = ', '.join('?' for _ in active_titles)
-                query = f"""
-                    UPDATE alerts 
-                    SET resolved = 1 
-                    WHERE asset_id = ? AND trigger_url = ? AND resolved = 0 AND title NOT IN ({placeholders});
-                """
-                conn.execute(query, [asset_id, url] + list(active_titles))
-                
-                for a in triggered_alerts:
+            for ea in existing_active:
+                if ea['title'] not in active_titles:
+                    ea_title = ea['title']
+                    ea_extracted_ver = None
+                    if '(' in ea_title and ea_title.endswith(')'):
+                        ver_part = ea_title.split('(')[-1][:-1]
+                        if ver_part.lower().startswith('v'):
+                            ver_part = ver_part[1:]
+                        ea_extracted_ver = ver_part
+                    
+                    temp_alert = {
+                        'title': ea['title'],
+                        'description': ea['description'],
+                        'version_actuelle': version_actuelle,
+                        'extracted_version': ea_extracted_ver
+                    }
+                    status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                    if status == 'hide':
+                        conn.execute("""
+                            UPDATE alerts 
+                            SET resolved = 1, resolved_at_version = ?
+                            WHERE id = ?;
+                        """, (version_actuelle, ea['id']))
+            
+            for a in triggered_alerts:
                     existing = conn.execute("""
                         SELECT id FROM alerts 
                         WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 0;
