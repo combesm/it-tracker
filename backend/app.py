@@ -444,12 +444,6 @@ def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, as
                                         { "title": "Date pub.", "value": pub_date or "Non spécifiée" }
                                     ],
                                     "spacing": "Medium"
-                                },
-                                {
-                                    "type": "TextBlock",
-                                    "text": alert_desc or "Aucune description fournie.",
-                                    "wrap": True,
-                                    "spacing": "Medium"
                                 }
                             ]
                         }
