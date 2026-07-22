@@ -103,9 +103,42 @@ export default function Settings({ backendUrl }) {
   const cronCmd = `${cronSchedule} curl -s -X POST "${absoluteCronUrl}" > /dev/null`;
 
   const handleCopyCron = () => {
-    navigator.clipboard.writeText(cronCmd);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cronCmd)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy using navigator.clipboard: ', err);
+          fallbackCopyTextToClipboard(cronCmd);
+        });
+    } else {
+      fallbackCopyTextToClipboard(cronCmd);
+    }
+  };
+
+  const fallbackCopyTextToClipboard = (text) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "-9999px";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        console.error('Fallback: Copying text command was unsuccessful');
+      }
+    } catch (err) {
+      console.error('Fallback: Unable to copy', err);
+    }
+    document.body.removeChild(textArea);
   };
 
   if (loading) {
