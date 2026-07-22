@@ -694,6 +694,27 @@ def fetch_opencve_feed(url):
         cvss_score = cvss_dict.get('v3')
         if cvss_score is None:
             cvss_score = cvss_dict.get('v2')
+            
+        # Fallback pour extraire le score CVSS (notamment V4.0 ou V3/V2 s'ils sont uniquement dans raw_nvd_data)
+        if cvss_score is None:
+            raw_nvd = cve_detail.get('raw_nvd_data') or {}
+            metrics = raw_nvd.get('metrics') or {}
+            
+            # 1. Tenter CVSS v4.0
+            if 'cvssMetricV40' in metrics and isinstance(metrics['cvssMetricV40'], list) and len(metrics['cvssMetricV40']) > 0:
+                cvss_score = metrics['cvssMetricV40'][0].get('cvssData', {}).get('baseScore')
+            
+            # 2. Tenter CVSS v3.1
+            if cvss_score is None and 'cvssMetricV31' in metrics and isinstance(metrics['cvssMetricV31'], list) and len(metrics['cvssMetricV31']) > 0:
+                cvss_score = metrics['cvssMetricV31'][0].get('cvssData', {}).get('baseScore')
+                
+            # 3. Tenter CVSS v3.0
+            if cvss_score is None and 'cvssMetricV30' in metrics and isinstance(metrics['cvssMetricV30'], list) and len(metrics['cvssMetricV30']) > 0:
+                cvss_score = metrics['cvssMetricV30'][0].get('cvssData', {}).get('baseScore')
+                
+            # 4. Tenter CVSS v2
+            if cvss_score is None and 'cvssMetricV2' in metrics and isinstance(metrics['cvssMetricV2'], list) and len(metrics['cvssMetricV2']) > 0:
+                cvss_score = metrics['cvssMetricV2'][0].get('cvssData', {}).get('baseScore')
         
         if cvss_score is not None:
             try:
