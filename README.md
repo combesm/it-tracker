@@ -176,17 +176,34 @@ Les alertes envoyées à Microsoft Teams utilisent le format moderne **Adaptive 
    * Soit **"Géré par le Cron externe (À chaque appel)"** (permettant un contrôle précis au niveau du serveur).
 
 ### ⏱️ Planification de la tâche Cron :
-Pour automatiser la détection d'alertes, ajoutez une ligne dans le `crontab` de votre serveur hôte (`crontab -e`) :
+Pour automatiser la détection d'alertes, vous devez enregistrer cette tâche dans le planificateur de tâches (**Cron**) de votre serveur.
 
-*   **Option 1 : Planification Standard (toutes les 30 minutes)**
-    ```bash
-    */30 * * * * curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
-    ```
-*   **Option 2 : Planification aux Heures de Bureau (9h, 12h, 15h - Lundi au Vendredi)**
-    *Sélectionnez "Géré par le Cron externe" dans les paramètres puis configurez :*
-    ```bash
-    0 9,12,15 * * 1-5 curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
-    ```
+> [!IMPORTANT]
+> Ne lancez pas directement la ligne de planification dans votre terminal. Suivez les étapes ci-dessous :
+>
+> 1. Ouvrez l'éditeur de configuration Cron de votre serveur en tapant dans votre terminal :
+>    ```bash
+>    crontab -e
+>    ```
+>    *(Si c'est la première fois, le système peut vous demander de choisir un éditeur, choisissez `nano` en tapant son numéro, généralement `1`)*.
+>
+> 2. Descendez tout en bas du fichier ouvert et collez la commande recommandée copiée depuis l'interface, par exemple :
+>
+>    *   **Option 1 : Planification Standard (toutes les 30 minutes)**
+>        ```bash
+>        */30 * * * * curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
+>        ```
+>    *   **Option 2 : Planification aux Heures de Bureau (9h, 12h, 15h - Lundi au Vendredi)**
+>        *Sélectionnez "Géré par le Cron externe" dans les paramètres puis configurez :*
+>        ```bash
+>        0 9,12,15 * * 1-5 curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
+>        ```
+>
+> 3. Sauvegardez et fermez le fichier :
+>    - Avec **nano** : appuyez sur `Ctrl + O` puis `Entrée` pour enregistrer, puis `Ctrl + X` pour quitter.
+>    - Avec **vim** : tapez `:wq` puis `Entrée`.
+>
+> Vous devriez voir le message de confirmation : `crontab: installing new crontab`.
 
 *Le jeton de sécurité (`cron_token`) est disponible dans l'onglet **Paramètres** de l'interface utilisateur.*
 
