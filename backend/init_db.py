@@ -145,7 +145,7 @@ def init_db():
     # Actifs & Services
     assets = [
         ('Synology DSM', 'Synology', '7.2.1-69057', 'Self-hosted', 'NAS-PHY-01 (IP: 192.168.1.100)', 'Perpétuelle', None, 'https://www.cert.ssi.gouv.fr/feed/', 'MUC', 'Herakles'),
-        ('Windows Server 2022', 'Microsoft', '21H2 (10.0.20348)', 'On-premise', None, 'Limitée', '2027-12-31', 'https://www.cert.ssi.gouv.fr/feed/', 'ALF', 'Hexatio, Oztyis'),
+        ('Windows Server 2022', 'Microsoft', '21H2 (10.0.20348)', 'On-premise', None, 'Limitée', '2027-12-31', 'https://www.cert.ssi.gouv.fr/feed/', 'ALF', 'Hexatio, Ozytis'),
         ('Metabase', 'Metabase Core', '0.45.0', 'Self-hosted', 'VM-APP-02', 'Perpétuelle', None, 'https://github.com/metabase/metabase/releases.atom', 'JDO', 'Groupe, Herakles')
     ]
     cursor.executemany("""
