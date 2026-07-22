@@ -22,6 +22,8 @@ export default function Assets({ backendUrl }) {
   const [filterTag, setFilterTag] = useState('');
   const [filterMode, setFilterMode] = useState('include'); // 'include' or 'exclude'
   const [filterDeploiement, setFilterDeploiement] = useState('Tous');
+  const [filterEntite, setFilterEntite] = useState('Tous');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [responsable, setResponsable] = useState('');
   const [entites, setEntites] = useState(['Groupe']);
 
@@ -218,12 +220,30 @@ export default function Assets({ backendUrl }) {
     return Array.from(tagSet).sort();
   }, [assets]);
 
+  const allEntites = useMemo(() => {
+    const set = new Set();
+    assets.forEach(asset => {
+      if (asset.entites) {
+        asset.entites.split(',').map(e => e.trim()).filter(Boolean).forEach(e => set.add(e));
+      }
+    });
+    return Array.from(set).sort();
+  }, [assets]);
+
   const filteredAssets = useMemo(() => {
     let result = assets;
     
     // Filter by Deployment type
     if (filterDeploiement !== 'Tous') {
       result = result.filter(asset => asset.type_deploiement === filterDeploiement);
+    }
+
+    // Filter by Entite
+    if (filterEntite !== 'Tous') {
+      result = result.filter(asset => {
+        if (!asset.entites) return false;
+        return asset.entites.split(',').map(e => e.trim()).includes(filterEntite);
+      });
     }
     
     // Filter by Tag
@@ -236,7 +256,7 @@ export default function Assets({ backendUrl }) {
     }
     
     return result;
-  }, [assets, filterDeploiement, filterTag, filterMode]);
+  }, [assets, filterDeploiement, filterEntite, filterTag, filterMode]);
 
   const getTagStyle = (tag) => {
     let hash = 0;
@@ -389,7 +409,7 @@ export default function Assets({ backendUrl }) {
                 <div className="col-span-1 md:col-span-2">
                   <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider mb-2">Entité(s) associée(s)</label>
                   <div className="flex flex-wrap gap-5 py-2">
-                    {['Groupe', 'Herakles', 'Oztyis', 'Hexatio'].map((option) => (
+                    {['Groupe', 'Herakles', 'Ozytis', 'Hexatio'].map((option) => (
                       <label key={option} className="inline-flex items-center text-sm font-semibold text-brand-text cursor-pointer select-none">
                         <input
                           type="checkbox"
@@ -702,91 +722,170 @@ export default function Assets({ backendUrl }) {
         </div>
       )}
 
-      {/* Combined Filter Bar */}
-      {!formOpen && (
-        <div className="bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm space-y-3.5 animate-fadeIn">
-          {/* Deployment Filter */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Déploiement :</span>
-            {['Tous', 'SaaS', 'Self-hosted', 'On-premise'].map((type) => (
-              <button
-                key={type}
-                onClick={() => setFilterDeploiement(type)}
-                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
-                  filterDeploiement === type
-                    ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
-                    : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
-                }`}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
+      {/* Filter Toggle Button + Collapsible Panel */}
+      {!formOpen && (() => {
+        const activeCount = [
+          filterDeploiement !== 'Tous',
+          filterEntite !== 'Tous',
+          !!filterTag
+        ].filter(Boolean).length;
 
-          {/* Tag Filter */}
-          {allTags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-brand-border/40">
-              <span className="text-xs font-bold text-brand-dark/60 uppercase tracking-wider mr-2">Étiquettes :</span>
+        const resetAll = () => {
+          setFilterDeploiement('Tous');
+          setFilterEntite('Tous');
+          setFilterTag('');
+          setFilterMode('include');
+        };
+
+        return (
+          <div className="space-y-2">
+            {/* Toggle row */}
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  setFilterTag('');
-                  setFilterMode('include');
-                }}
-                className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
-                  !filterTag
-                    ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
-                    : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                onClick={() => setFiltersOpen(o => !o)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+                  filtersOpen
+                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30'
+                    : 'bg-brand-card text-brand-text/60 border-brand-border hover:border-brand-primary/40 hover:text-brand-primary'
                 }`}
               >
-                Tous
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 01.7 1.71L14 12.41V19a1 1 0 01-1.45.89l-4-2A1 1 0 018 17v-4.59L3.3 4.71A1 1 0 013 4z" />
+                </svg>
+                Filtres
+                {activeCount > 0 && (
+                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-brand-primary text-white rounded-full">
+                    {activeCount}
+                  </span>
+                )}
+                <svg xmlns="http://www.w3.org/2000/svg" className={`w-3 h-3 ml-0.5 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
-              {allTags.map((tag, idx) => {
-                const isSelected = filterTag === tag;
-                const style = getTagStyle(tag);
-                
-                const handleClick = () => {
-                  if (filterTag === tag) {
-                    if (filterMode === 'include') {
-                      setFilterMode('exclude');
-                    } else {
-                      setFilterTag('');
-                      setFilterMode('include');
-                    }
-                  } else {
-                    setFilterTag(tag);
-                    setFilterMode('include');
-                  }
-                };
-                
-                let btnClass = `px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer flex items-center gap-1 `;
-                if (isSelected) {
-                  if (filterMode === 'include') {
-                    btnClass += `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`;
-                  } else {
-                    btnClass += `bg-brand-bg/60 text-brand-text/35 border-brand-border/65 line-through opacity-70 hover:bg-brand-bg/80`;
-                  }
-                } else {
-                  btnClass += `bg-white text-brand-text border-brand-border ${style.hover}`;
-                }
-                
-                return (
+
+              {/* Active filter chips */}
+              {activeCount > 0 && (
+                <>
+                  {filterDeploiement !== 'Tous' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-full">
+                      {filterDeploiement}
+                      <button onClick={() => setFilterDeploiement('Tous')} className="hover:text-brand-alert ml-0.5 cursor-pointer">×</button>
+                    </span>
+                  )}
+                  {filterEntite !== 'Tous' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-full">
+                      {filterEntite}
+                      <button onClick={() => setFilterEntite('Tous')} className="hover:text-brand-alert ml-0.5 cursor-pointer">×</button>
+                    </span>
+                  )}
+                  {filterTag && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold bg-brand-primary/10 text-brand-primary border border-brand-primary/20 rounded-full">
+                      {filterMode === 'exclude' && <span className="text-[10px] text-brand-alert">✕</span>}
+                      {filterTag}
+                      <button onClick={() => { setFilterTag(''); setFilterMode('include'); }} className="hover:text-brand-alert ml-0.5 cursor-pointer">×</button>
+                    </span>
+                  )}
                   <button
-                    key={idx}
-                    onClick={handleClick}
-                    className={btnClass}
-                    title={isSelected && filterMode === 'exclude' ? "Sauf cette étiquette (cliquer pour effacer le filtre)" : isSelected ? "Cette étiquette uniquement (cliquer pour l'exclure)" : "Filtrer par cette étiquette"}
+                    onClick={resetAll}
+                    className="text-[11px] text-brand-text/40 hover:text-brand-alert transition-colors cursor-pointer underline underline-offset-2"
                   >
-                    {isSelected && filterMode === 'exclude' && (
-                      <span className="text-[10px] font-extrabold text-brand-alert/80 mr-0.5">✕</span>
-                    )}
-                    {tag}
+                    Tout effacer
                   </button>
-                );
-              })}
+                </>
+              )}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Collapsible panel */}
+            {filtersOpen && (
+              <div className="bg-brand-card p-4 rounded-lg border border-brand-border shadow-sm space-y-3.5 animate-fadeIn">
+                {/* Deployment Filter */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-brand-dark/50 uppercase tracking-wider w-24 shrink-0">Déploiement</span>
+                  {['Tous', 'SaaS', 'Self-hosted', 'On-premise'].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setFilterDeploiement(type)}
+                      className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+                        filterDeploiement === type
+                          ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                          : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Entite Filter */}
+                {allEntites.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-brand-border/40">
+                    <span className="text-xs font-bold text-brand-dark/50 uppercase tracking-wider w-24 shrink-0">Entité</span>
+                    {['Tous', ...allEntites].map((entite) => (
+                      <button
+                        key={entite}
+                        onClick={() => setFilterEntite(entite)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+                          filterEntite === entite
+                            ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                            : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                        }`}
+                      >
+                        {entite}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Tag Filter */}
+                {allTags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-brand-border/40">
+                    <span className="text-xs font-bold text-brand-dark/50 uppercase tracking-wider w-24 shrink-0">Étiquettes</span>
+                    <button
+                      onClick={() => { setFilterTag(''); setFilterMode('include'); }}
+                      className={`px-3 py-1 text-xs font-semibold rounded-full border transition-all cursor-pointer ${
+                        !filterTag
+                          ? 'bg-brand-primary text-white border-brand-primary shadow-sm'
+                          : 'bg-brand-bg text-brand-text/80 border-brand-border hover:bg-brand-bg/85'
+                      }`}
+                    >
+                      Tous
+                    </button>
+                    {allTags.map((tag, idx) => {
+                      const isSelected = filterTag === tag;
+                      const style = getTagStyle(tag);
+                      const handleClick = () => {
+                        if (filterTag === tag) {
+                          if (filterMode === 'include') { setFilterMode('exclude'); }
+                          else { setFilterTag(''); setFilterMode('include'); }
+                        } else {
+                          setFilterTag(tag); setFilterMode('include');
+                        }
+                      };
+                      let btnClass = `px-3 py-1 text-xs font-bold rounded-full border transition-all cursor-pointer flex items-center gap-1 `;
+                      if (isSelected) {
+                        if (filterMode === 'include') btnClass += `${style.bg} border-brand-primary shadow-sm ring-1 ring-brand-primary/20`;
+                        else btnClass += `bg-brand-bg/60 text-brand-text/35 border-brand-border/65 line-through opacity-70 hover:bg-brand-bg/80`;
+                      } else {
+                        btnClass += `bg-white text-brand-text border-brand-border ${style.hover}`;
+                      }
+                      return (
+                        <button key={idx} onClick={handleClick} className={btnClass}
+                          title={isSelected && filterMode === 'exclude' ? "Sauf cette étiquette (cliquer pour effacer le filtre)" : isSelected ? "Cette étiquette uniquement (cliquer pour l'exclure)" : "Filtrer par cette étiquette"}
+                        >
+                          {isSelected && filterMode === 'exclude' && (
+                            <span className="text-[10px] font-extrabold text-brand-alert/80 mr-0.5">✕</span>
+                          )}
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Assets Table */}
       <div className="bg-brand-card rounded-lg border border-brand-border shadow-sm">

@@ -1369,7 +1369,7 @@ def get_resolved_alerts():
         FROM alerts al
         JOIN assets asst ON al.asset_id = asst.id
         WHERE al.resolved = 1
-        ORDER BY al.pub_date DESC, al.id DESC;
+        ORDER BY al.id DESC;
     """).fetchall()
     conn.close()
     
