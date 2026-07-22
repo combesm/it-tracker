@@ -127,6 +127,8 @@ fi
 if [ "$ENABLE_UPTIME_KUMA" = "true" ]; then
     echo "-> Starting Uptime Kuma Docker stack..."
     mkdir -p uptime_data
+    # Ensure correct permissions for the Uptime Kuma container (UID 1000)
+    sudo chown -R 1000:1000 uptime_data
     $DOCKER_COMPOSE -f docker-compose.uptime.yml up -d
 else
     echo "-> Uptime Kuma is disabled. Stopping container if running..."
