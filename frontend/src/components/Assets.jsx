@@ -207,6 +207,23 @@ export default function Assets({ backendUrl }) {
     }
   };
 
+  const handleDuplicate = async (assetId) => {
+    try {
+      const res = await fetch(`${backendUrl}/api/assets/${assetId}/duplicate`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        fetchAssets();
+      } else {
+        const err = await res.json();
+        alert(`Erreur lors de la duplication : ${err.error || 'inconnue'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erreur de connexion avec le serveur.');
+    }
+  };
+
   const allTags = useMemo(() => {
     const tagSet = new Set();
     assets.forEach(asset => {
@@ -996,6 +1013,13 @@ export default function Assets({ backendUrl }) {
                               className="px-2.5 py-1.5 text-brand-primary hover:bg-brand-primary/10 rounded-md border border-brand-primary/20 transition-all"
                             >
                               Modifier
+                            </button>
+                            <button
+                              onClick={() => handleDuplicate(asset.id)}
+                              title="Dupliquer cet actif"
+                              className="px-2.5 py-1.5 text-amber-600 hover:bg-amber-50 rounded-md border border-amber-200 transition-all"
+                            >
+                              Dupliquer
                             </button>
                             <button
                               onClick={() => handleDelete(asset.id)}
