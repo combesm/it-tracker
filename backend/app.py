@@ -1550,52 +1550,66 @@ def refresh_alerts(notify=False):
                         print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
                         continue
 
-                # Extraction de la version
-                def find_version_elem(elem):
-                    tag = elem.tag.split('}')[-1]
-                    if tag == 'version' and elem.text:
-                        return elem.text.strip()
-                    for child in elem:
-                        res = find_version_elem(child)
-                        if res:
-                            return res
-                    return None
-
-                xml_version = find_version_elem(root)
-                if not xml_version:
-                    continue
-
-                # Comparaison et Alerte
-                asset_ver = parse_version_safe(version_actuelle)
-                xml_ver = parse_version_safe(xml_version)
-
-                if xml_ver and asset_ver and xml_ver > asset_ver:
-                    title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
-                    
-                    # Extraction de infourl si présent
-                    def find_infourl_elem(elem):
+                # Support de plusieurs éléments <update> dans les fichiers XML Joomla
+                # On extrait toutes les balises <update> et on cherche la version la plus élevée.
+                updates_list = []
+                if root.tag.split('}')[-1] == 'update':
+                    updates_list.append(root)
+                else:
+                    def find_all_updates(elem):
+                        res = []
                         tag = elem.tag.split('}')[-1]
-                        if tag == 'infourl' and elem.text:
-                            return elem.text.strip()
-                        for child in elem:
-                            res = find_infourl_elem(child)
-                            if res:
-                                return res
-                        return None
+                        if tag == 'update':
+                            res.append(elem)
+                        else:
+                            for child in elem:
+                                res.extend(find_all_updates(child))
+                        return res
+                    updates_list = find_all_updates(root)
 
-                    xml_infourl = find_infourl_elem(root)
-                    link = xml_infourl if xml_infourl else url
-                    pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                best_update = None
+                best_version_obj = None
 
-                    triggered_alert_for_url = {
-                        'title': title,
-                        'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
-                        'link': link,
-                        'pub_date': pub_date,
-                        'trigger_url': url,
-                        'is_secondary': 0 if is_primary else 1
-                    }
-                    triggered_alerts.append(triggered_alert_for_url)
+                for upd in updates_list:
+                    ver_str = None
+                    for child in upd:
+                        if child.tag.split('}')[-1] == 'version' and child.text:
+                            ver_str = child.text.strip()
+                            break
+                    if ver_str:
+                        ver_obj = parse_version_safe(ver_str)
+                        if ver_obj:
+                            if best_version_obj is None or ver_obj > best_version_obj:
+                                best_version_obj = ver_obj
+                                best_update = (ver_str, upd)
+
+                if best_update:
+                    xml_version, upd_elem = best_update
+                    xml_ver = best_version_obj
+                    asset_ver = parse_version_safe(version_actuelle)
+
+                    if xml_ver and asset_ver and xml_ver > asset_ver:
+                        title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
+                        
+                        # Extraction de infourl dans upd_elem
+                        xml_infourl = None
+                        for child in upd_elem:
+                            if child.tag.split('}')[-1] == 'infourl' and child.text:
+                                xml_infourl = child.text.strip()
+                                break
+                                
+                        link = xml_infourl if xml_infourl else url
+                        pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                        triggered_alert_for_url = {
+                            'title': title,
+                            'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
+                            'link': link,
+                            'pub_date': pub_date,
+                            'trigger_url': url,
+                            'is_secondary': 0 if is_primary else 1
+                        }
+                        triggered_alerts.append(triggered_alert_for_url)
 
             else:
                 # RSS Feed
