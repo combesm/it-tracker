@@ -14,9 +14,12 @@ La suite est orchestrée sous forme de conteneurs Docker reliés par un réseau 
 graph TD
     Client[Navigateur Web de l'Administrateur] -->|Port 80| NginxHost80[Nginx Hôte : Port 80]
     Client -->|Port 3001| NginxHost3001[Nginx Hôte : Port 3001]
+    Client -->|Port 3003| NginxHost3003[Nginx Hôte : Port 3003]
     NginxHost80 -->|/| ITTracker[Conteneur IT Tracker : Flask & React]
     NginxHost80 -->|/opencve| OpenCVEWeb[Conteneur OpenCVE Webserver]
+    NginxHost80 -->|/vigil| Vigil365[Conteneur Vigil365 : ASP.NET & React]
     NginxHost3001 -->|/| UptimeKuma[Conteneur Uptime Kuma : Port local 3002]
+    NginxHost3003 -->|/| Vigil365
     ITTracker -->|API REST local| OpenCVEWeb
     OpenCVEWeb -->|Celery Workers| CeleryWorker[OpenCVE Celery Worker]
     OpenCVEWeb -->|Celery Beat| CeleryBeat[OpenCVE Celery Beat]
@@ -24,6 +27,7 @@ graph TD
     OpenCVEWeb -->|Cache/Brokers| Redis[Redis OpenCVE]
     ITTracker -->|Persistant Bind Mount| SQLite[(database.db sur Hôte)]
     UptimeKuma -->|Persistant Bind Mount| KumaDB[(mariadb/ sur Hôte)]
+    Vigil365 -->|Persistant Bind Mount| VigilDB[(vigil365.db sur Hôte)]
 ```
 
 ### 📋 Portabilité de la solution
@@ -36,7 +40,7 @@ Le projet a été spécialement conçu pour être **100 % portable** et prêt po
 
 ## 🚀 Installation Complète en Une Étape (Recommandée)
 
-Le script de déploiement automatique configure l'intégralité de la pile : installation de Nginx hôte, téléchargement et construction d'OpenCVE, génération des clés de chiffrement et des comptes API, et démarrage des conteneurs.
+Le script de déploiement automatique configure l'intégralité de la pile : installation de Nginx hôte, téléchargement et construction d'OpenCVE et Vigil365, génération des clés de chiffrement et des comptes API, et démarrage des conteneurs.
 
 ### Prérequis
 - Un serveur sous **Linux** (Debian/Ubuntu recommandé).
@@ -69,6 +73,12 @@ TRACKER_ADMIN_PASSWORD=<mot_de_passe_généré>
 
 # Intégration Uptime Kuma (Optionnelle)
 ENABLE_UPTIME_KUMA=true
+
+# Intégration Vigil365 M365 Security Alert Dashboard (Optionnelle)
+ENABLE_VIGIL365=true
+VIGIL365_TENANT_ID=YOUR_TENANT_ID
+VIGIL365_CLIENT_ID=YOUR_CLIENT_ID
+VIGIL365_CLIENT_SECRET=YOUR_CLIENT_SECRET
 ```
 
 ### 🔑 Comment récupérer ou réinitialiser les secrets ?

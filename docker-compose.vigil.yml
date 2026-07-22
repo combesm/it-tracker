@@ -1,0 +1,18 @@
+version: "3.4"
+
+services:
+  vigil365:
+    build:
+      context: .
+      dockerfile: Dockerfile.vigil
+    container_name: vigil365
+    volumes:
+      - ./vigil_data:/app/data
+    environment:
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/vigil365.db
+      - Graph__TenantId=${VIGIL365_TENANT_ID:-YOUR_TENANT_ID}
+      - Graph__ClientId=${VIGIL365_CLIENT_ID:-YOUR_CLIENT_ID}
+      - Graph__ClientSecret=${VIGIL365_CLIENT_SECRET:-YOUR_CLIENT_SECRET}
+    ports:
+      - "127.0.0.1:3003:8080"
+    restart: unless-stopped

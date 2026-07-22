@@ -16,7 +16,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   // Compteur fictif pour forcer le rafraîchissement des formulaires liés à l'équipe
   const [teamRefreshKey, setTeamRefreshKey] = useState(0);
-  const [config, setConfig] = useState({ enable_uptime_kuma: false, enable_opencve: false });
+  const [config, setConfig] = useState({ enable_uptime_kuma: false, enable_opencve: false, enable_vigil365: false });
 
   useEffect(() => {
     const handleAuthFailed = () => {

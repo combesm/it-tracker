@@ -1000,7 +1000,8 @@ def add_security_headers(response):
 def get_config():
     return jsonify({
         'enable_uptime_kuma': os.getenv('ENABLE_UPTIME_KUMA', 'false').lower() == 'true',
-        'enable_opencve': os.getenv('OPENCVE_URL') is not None and os.getenv('OPENCVE_URL') != ''
+        'enable_opencve': os.getenv('OPENCVE_URL') is not None and os.getenv('OPENCVE_URL') != '',
+        'enable_vigil365': os.getenv('ENABLE_VIGIL365', 'false').lower() == 'true'
     })
 
 @app.route('/api/settings', methods=['GET'])
