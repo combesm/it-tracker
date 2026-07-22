@@ -344,49 +344,127 @@ def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, as
     if not webhook_url:
         return False, "URL Webhook vide"
     
-    # Mapper les couleurs par criticité
-    color_map = {
-        'critical': 'd9383a', # Rouge
-        'high': 'f29111',     # Orange
-        'medium': 'e0c100',   # Jaune
-        'low': '338d35',      # Vert
-        'update_available': '2196f3', # Bleu
-        'manual_check': '9e9e9e' # Gris
-    }
-    theme_color = color_map.get(priority.lower(), '2196f3')
-    
-    # Construction de la MessageCard Microsoft Teams
+    # Calcul de la couleur, du style et de l'affichage du CVSS
+    cvss_val = None
+    if cvss_score is not None:
+        try:
+            cvss_val = float(cvss_score)
+        except ValueError:
+            pass
+
+    if cvss_val is not None:
+        if cvss_val >= 9.0:
+            card_style = "attention"  # Rouge
+            text_color = "attention"
+            cvss_display = f"🔴 {cvss_val} (CRITIQUE)"
+        elif cvss_val >= 7.0:
+            card_style = "warning"    # Orange / Jaune
+            text_color = "warning"
+            cvss_display = f"🟠 {cvss_val} (ÉLEVÉ)"
+        elif cvss_val >= 4.0:
+            card_style = "accent"     # Bleu
+            text_color = "accent"
+            cvss_display = f"🟡 {cvss_val} (MOYEN)"
+        else:
+            card_style = "good"       # Vert
+            text_color = "good"
+            cvss_display = f"🟢 {cvss_val} (BAS)"
+    else:
+        p_lower = priority.lower() if priority else ""
+        if p_lower == 'critical':
+            card_style = "attention"
+            text_color = "attention"
+            cvss_display = "🔴 N/A"
+        elif p_lower == 'high':
+            card_style = "warning"
+            text_color = "warning"
+            cvss_display = "🟠 N/A"
+        elif p_lower in ('medium', 'update_available'):
+            card_style = "accent"
+            text_color = "accent"
+            cvss_display = "🟡 N/A" if p_lower == 'medium' else "🔵 N/A"
+        elif p_lower == 'low':
+            card_style = "good"
+            text_color = "good"
+            cvss_display = "🟢 N/A"
+        else:
+            card_style = "default"
+            text_color = "default"
+            cvss_display = "⚪ N/A"
+
+    # Construction de l'Adaptive Card Teams (v1.4)
     payload = {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "themeColor": theme_color,
-        "summary": f"IT-Tracker Alert: {cve_id or alert_title}",
-        "title": "🚨 Faille de sécurité détectée" if cve_id else "🔔 Mise à jour ou Alerte",
-        "sections": [
+        "type": "message",
+        "attachments": [
             {
-                "activityTitle": f"Produit : **{asset_name}**",
-                "activitySubtitle": f"Version installée : {asset_version}",
-                "facts": [
-                    { "name": "Alerte / Titre", "value": alert_title or "Non spécifié" },
-                    { "name": "Score CVSS", "value": str(cvss_score) if cvss_score else "N/A" },
-                    { "name": "Criticité", "value": priority.upper() },
-                    { "name": "Date pub.", "value": pub_date or "Non spécifiée" }
-                ],
-                "text": alert_desc or "Aucune description fournie."
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "Container",
+                            "style": card_style,
+                            "bleed": True,
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": "🚨 Faille de sécurité détectée" if cve_id else "🔔 Mise à jour ou Alerte",
+                                    "weight": "Bolder",
+                                    "size": "Large",
+                                    "color": text_color
+                                }
+                            ]
+                        },
+                        {
+                            "type": "Container",
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"Produit : **{asset_name}**",
+                                    "size": "Medium",
+                                    "weight": "Bolder",
+                                    "wrap": True
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"Version installée : {asset_version}",
+                                    "isSubtle": True,
+                                    "spacing": "None",
+                                    "wrap": True
+                                },
+                                {
+                                    "type": "FactSet",
+                                    "facts": [
+                                        { "title": "Alerte / Titre", "value": alert_title or "Non spécifié" },
+                                        { "title": "Score CVSS", "value": cvss_display },
+                                        { "title": "Criticité", "value": priority.upper() if priority else "N/A" },
+                                        { "title": "Date pub.", "value": pub_date or "Non spécifiée" }
+                                    ],
+                                    "spacing": "Medium"
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": alert_desc or "Aucune description fournie.",
+                                    "wrap": True,
+                                    "spacing": "Medium"
+                                }
+                            ]
+                        }
+                    ],
+                    "actions": [
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": "Voir la source de l'alerte",
+                            "url": alert_link
+                        }
+                    ] if alert_link else []
+                }
             }
-        ],
-        "potentialAction": []
+        ]
     }
-    
-    # Ajouter un bouton d'action si un lien est présent
-    if alert_link:
-        payload["potentialAction"].append({
-            "@type": "OpenUri",
-            "name": "Voir la source de l'alerte",
-            "targets": [
-                { "os": "default", "uri": alert_link }
-            ]
-        })
         
     try:
         req = urllib.request.Request(
@@ -1226,6 +1304,58 @@ def add_asset():
 
     conn.close()
     return jsonify({'id': asset_id, 'success': True}), 201
+
+@app.route('/api/assets/<int:asset_id>/duplicate', methods=['POST'])
+def duplicate_asset(asset_id):
+    conn = get_db_connection()
+    
+    # Récupérer l'actif source
+    asset = conn.execute("SELECT * FROM assets WHERE id = ?;", (asset_id,)).fetchone()
+    if not asset:
+        conn.close()
+        return jsonify({'error': 'Actif introuvable'}), 404
+    
+    asset = dict(asset)
+    urls = conn.execute(
+        "SELECT url, is_primary FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;",
+        (asset_id,)
+    ).fetchall()
+    
+    try:
+        cursor = conn.execute("""
+            INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement,
+                machine_hebergement, type_licence, date_expiration, url_rss,
+                responsable, entites, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (
+            asset['nom_produit'] + ' (copie)',
+            asset['fournisseur'],
+            asset['version_actuelle'],
+            asset['type_deploiement'],
+            asset['machine_hebergement'],
+            asset['type_licence'],
+            asset['date_expiration'],
+            asset['url_rss'],
+            asset['responsable'],
+            asset['entites'],
+            asset['tags'],
+        ))
+        new_id = cursor.lastrowid
+        
+        for url_row in urls:
+            conn.execute(
+                "INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, ?);",
+                (new_id, url_row['url'], url_row['is_primary'])
+            )
+        
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'Erreur de duplication : {str(e)}'}), 500
+    
+    conn.close()
+    return jsonify({'id': new_id, 'success': True}), 201
+
 
 @app.route('/api/assets/<int:asset_id>', methods=['PUT'])
 def update_asset(asset_id):

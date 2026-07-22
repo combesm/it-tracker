@@ -155,6 +155,18 @@ cd /var/www/it-tracker/
 
 L'IT-Tracker intègre un système d'envoi d'alertes par **Microsoft Teams (Webhook)**. Vous pouvez configurer cela directement depuis l'interface utilisateur dans le nouvel onglet **Paramètres**.
 
+### 🎨 Format des Notifications (Adaptive Cards)
+
+Les alertes envoyées à Microsoft Teams utilisent le format moderne **Adaptive Cards (v1.4)** pour offrir un rendu riche, lisible et structuré :
+* **Code couleur dynamique (CVSS)** : La couleur de l'en-tête et les indicateurs visuels s'adaptent automatiquement selon le score CVSS :
+  * **Critique (score ≥ 9.0)** : Bandeau et pastille rouge (`🔴 CRITIQUE`).
+  * **Élevé (score 7.0 - 8.9)** : Bandeau et pastille jaune/orange (`🟠 ÉLEVÉ`).
+  * **Moyen (score 4.0 - 6.9)** : Bandeau et pastille bleu (`🟡 MOYEN`).
+  * **Bas (score < 4.0)** : Bandeau et pastille vert (`🟢 BAS`).
+  * **Non spécifié (N/A)** : Couleur neutre (`⚪ N/A`).
+* **Structure claire** : Les détails sur l'actif impacté, la criticité, la date de publication et la description de la faille sont présentés sous forme de blocs structurés et de colonnes d'informations.
+* **Bouton d'action direct** : Un bouton d'action moderne permet d'accéder directement au lien source de la CVE ou de l'alerte pour une investigation immédiate.
+
 ### ⚙️ Paramètres disponibles :
 1. **Activer/Désactiver** les notifications Teams.
 2. Définir le **Webhook URL** Teams.
