@@ -15,4 +15,6 @@ backend/database.db
 *.db
 node-env/
 uptime_data/
+vigil365/
+vigil_data/
 

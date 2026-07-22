@@ -16,6 +16,7 @@ services:
       - TRACKER_ADMIN_USER=${TRACKER_ADMIN_USER:-admin}
       - TRACKER_ADMIN_PASSWORD=${TRACKER_ADMIN_PASSWORD}
       - ENABLE_UPTIME_KUMA=${ENABLE_UPTIME_KUMA:-true}
+      - ENABLE_VIGIL365=${ENABLE_VIGIL365:-true}
     volumes:
       # Persistance de la base de données SQLite locale sur la machine hôte
       # Les données seront stockées dans un dossier local "./data" à la racine du projet

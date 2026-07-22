@@ -135,6 +135,30 @@ else
     $DOCKER_COMPOSE -f docker-compose.uptime.yml down 2>/dev/null || true
 fi
 
+# Check if Vigil365 is enabled in existing environment/config
+ENABLE_VIGIL365="true"
+if [ -f .env ]; then
+    ENV_VAL=$(grep -E "^ENABLE_VIGIL365=" .env | cut -d'=' -f2 | tr -d '\r')
+    if [ "$ENV_VAL" = "false" ]; then
+        ENABLE_VIGIL365="false"
+    fi
+fi
+
+if [ "$ENABLE_VIGIL365" = "true" ]; then
+    echo "-> Setting up Vigil365..."
+    if [ ! -d "vigil365" ]; then
+        echo "-> Cloning Vigil365 repository..."
+        git clone https://github.com/sameerk27/vigil365.git vigil365
+    fi
+    echo "-> Applying SQLite patch for Vigil365..."
+    python3 patch_vigil.py
+    mkdir -p vigil_data
+    $DOCKER_COMPOSE -f docker-compose.vigil.yml up -d --build
+else
+    echo "-> Vigil365 is disabled. Stopping container if running..."
+    $DOCKER_COMPOSE -f docker-compose.vigil.yml down 2>/dev/null || true
+fi
+
 # 6. Apply Nginx Configuration
 if [ -f "nginx-opencve.conf" ]; then
     echo "-> Applying Nginx proxy configuration..."
@@ -198,10 +222,15 @@ fi
 # Automatically write/update .env file
 echo "-> Configuring/Updating .env file with OpenCVE and IT-Tracker credentials..."
 PREV_UPTIME_KUMA="true"
+PREV_VIGIL365="true"
 if [ -f .env ]; then
     ENV_VAL=$(grep -E "^ENABLE_UPTIME_KUMA=" .env | cut -d'=' -f2 | tr -d '\r')
     if [ "$ENV_VAL" = "false" ]; then
         PREV_UPTIME_KUMA="false"
+    fi
+    ENV_VIGIL=$(grep -E "^ENABLE_VIGIL365=" .env | cut -d'=' -f2 | tr -d '\r')
+    if [ "$ENV_VIGIL" = "false" ]; then
+        PREV_VIGIL365="false"
     fi
 fi
 
@@ -218,6 +247,12 @@ TRACKER_ADMIN_PASSWORD=${TRACKER_PASSWORD}
 
 # Intégration Uptime Kuma
 ENABLE_UPTIME_KUMA=${PREV_UPTIME_KUMA}
+
+# Intégration Vigil365 (M365 Security Alert Dashboard)
+ENABLE_VIGIL365=${PREV_VIGIL365}
+VIGIL365_TENANT_ID=${VIGIL365_TENANT_ID:-YOUR_TENANT_ID}
+VIGIL365_CLIENT_ID=${VIGIL365_CLIENT_ID:-YOUR_CLIENT_ID}
+VIGIL365_CLIENT_SECRET=${VIGIL365_CLIENT_SECRET:-YOUR_CLIENT_SECRET}
 EOF
 
 # 9. Build and run IT-Tracker service
@@ -234,7 +269,10 @@ echo "   Deployment Complete!"
 echo "   - Inventory App: http://${PRIMARY_IP}/"
 echo "   - OpenCVE: http://${PRIMARY_IP}/opencve/"
 if [ "$ENABLE_UPTIME_KUMA" = "true" ]; then
-echo "   - Uptime Kuma: http://${PRIMARY_IP}/uptime/"
+echo "   - Uptime Kuma: http://${PRIMARY_IP}:3001/"
+fi
+if [ "$ENABLE_VIGIL365" = "true" ]; then
+echo "   - Vigil365: http://${PRIMARY_IP}/vigil (ou http://${PRIMARY_IP}:3003/)"
 fi
 echo "=========================================================="
 echo "   To view import logs run: docker logs -f opencve-webserver"
