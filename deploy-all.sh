@@ -135,9 +135,10 @@ fi
 
 # 6. Apply Nginx Configuration
 if [ -f "nginx-opencve.conf" ]; then
-    echo "-> Applying Nginx proxy configuration (skipping sudo cp/restart since it is already configured)..."
-    # sudo cp nginx-opencve.conf /etc/nginx/sites-available/default
-    # sudo systemctl restart nginx
+    echo "-> Applying Nginx proxy configuration..."
+    sudo cp nginx-opencve.conf /etc/nginx/sites-available/default
+    echo "-> Restarting Nginx service..."
+    sudo systemctl restart nginx
 else
     echo "Error: nginx-opencve.conf not found!" >&2
     exit 1
@@ -217,7 +218,12 @@ TRACKER_ADMIN_PASSWORD=${TRACKER_PASSWORD}
 ENABLE_UPTIME_KUMA=${PREV_UPTIME_KUMA}
 EOF
 
-# 9. Start CPE/CVE data import asynchronously (runs inside the container in background)
+# 9. Build and run IT-Tracker service
+echo "-> Starting IT-Tracker Docker stack..."
+mkdir -p data
+$DOCKER_COMPOSE -f docker-compose.yml up -d --build
+
+# 10. Start CPE/CVE data import asynchronously (runs inside the container in background)
 echo "-> Triggering background CPE/CVE data import..."
 docker exec -d opencve-webserver opencve import-data --confirm
 
