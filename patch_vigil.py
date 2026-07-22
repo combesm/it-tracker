@@ -6,7 +6,20 @@ def patch_vigil():
         print("-> Vigil365 directory not found, skipping patch.")
         return
 
-    # 1. Update csproj to include Microsoft.EntityFrameworkCore.Sqlite
+    # 1. Update vite.config.ts to use relative base path (base: "./") for subpath hosting (/vigil)
+    vite_config_path = 'vigil365/src/m365-security-dashboard-client/vite.config.ts'
+    if os.path.exists(vite_config_path):
+        with open(vite_config_path, 'r') as f:
+            content = f.read()
+        if 'base:' not in content:
+            target = 'export default defineConfig({'
+            replacement = 'export default defineConfig({\n  base: "./",'
+            content = content.replace(target, replacement)
+            with open(vite_config_path, 'w') as f:
+                f.write(content)
+            print("-> Set relative base path (base: './') in vite.config.ts.")
+
+    # 2. Update csproj to include Microsoft.EntityFrameworkCore.Sqlite
     csproj_path = os.path.join(vigil_dir, 'M365SecurityDashboard.Api.csproj')
     if os.path.exists(csproj_path):
         with open(csproj_path, 'r') as f:
@@ -19,7 +32,7 @@ def patch_vigil():
                 f.write(content)
             print("-> Added SQLite EF Core package to csproj.")
 
-    # 2. Fix AppDbContext.cs HasColumnType("nvarchar(max)") for SQLite
+    # 3. Fix AppDbContext.cs HasColumnType("nvarchar(max)") for SQLite
     appdbcontext_path = os.path.join(vigil_dir, 'Data/AppDbContext.cs')
     if os.path.exists(appdbcontext_path):
         with open(appdbcontext_path, 'r') as f:
@@ -30,7 +43,7 @@ def patch_vigil():
                 f.write(content)
             print("-> Removed T-SQL nvarchar(max) from AppDbContext.cs for SQLite compatibility.")
 
-    # 3. Update Program.cs for dual SQLite / SQL Server support
+    # 4. Update Program.cs for dual SQLite / SQL Server support
     program_path = os.path.join(vigil_dir, 'Program.cs')
     if os.path.exists(program_path):
         with open(program_path, 'r') as f:
