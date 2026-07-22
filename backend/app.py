@@ -2003,7 +2003,7 @@ def get_stats():
 @app.route('/api/update-logs', methods=['GET'])
 def get_update_logs():
     conn = get_db_connection()
-    logs = conn.execute("SELECT * FROM update_logs ORDER BY date_maj DESC, id DESC LIMIT 15;").fetchall()
+    logs = conn.execute("SELECT * FROM update_logs ORDER BY date_maj DESC, id DESC;").fetchall()
     conn.close()
     return jsonify([dict(l) for l in logs])
 
