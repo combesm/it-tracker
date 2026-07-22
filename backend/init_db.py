@@ -100,6 +100,26 @@ def init_db():
     );
     """)
 
+    # Table Settings
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
+    """)
+
+    # Insertion des paramètres par défaut
+    import secrets
+    default_settings = [
+        ('teams_webhook_url', ''),
+        ('enable_notifications', 'false'),
+        ('notification_min_cvss', '7.0'),
+        ('refresh_interval_hours', '12'),
+        ('last_refresh_time', ''),
+        ('cron_token', secrets.token_hex(16))
+    ]
+    cursor.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?);", default_settings)
+
     # Insertion de l'administrateur par défaut
     import os
     from werkzeug.security import generate_password_hash

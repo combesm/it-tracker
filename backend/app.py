@@ -340,6 +340,69 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, asset_name, asset_version, cve_id, cvss_score, priority, pub_date):
+    if not webhook_url:
+        return False, "URL Webhook vide"
+    
+    # Mapper les couleurs par criticité
+    color_map = {
+        'critical': 'd9383a', # Rouge
+        'high': 'f29111',     # Orange
+        'medium': 'e0c100',   # Jaune
+        'low': '338d35',      # Vert
+        'update_available': '2196f3', # Bleu
+        'manual_check': '9e9e9e' # Gris
+    }
+    theme_color = color_map.get(priority.lower(), '2196f3')
+    
+    # Construction de la MessageCard Microsoft Teams
+    payload = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": theme_color,
+        "summary": f"IT-Tracker Alert: {cve_id or alert_title}",
+        "title": "🚨 Faille de sécurité détectée" if cve_id else "🔔 Mise à jour ou Alerte",
+        "sections": [
+            {
+                "activityTitle": f"Produit : **{asset_name}**",
+                "activitySubtitle": f"Version installée : {asset_version}",
+                "facts": [
+                    { "name": "Alerte / Titre", "value": alert_title or "Non spécifié" },
+                    { "name": "Score CVSS", "value": str(cvss_score) if cvss_score else "N/A" },
+                    { "name": "Criticité", "value": priority.upper() },
+                    { "name": "Date pub.", "value": pub_date or "Non spécifiée" }
+                ],
+                "text": alert_desc or "Aucune description fournie."
+            }
+        ],
+        "potentialAction": []
+    }
+    
+    # Ajouter un bouton d'action si un lien est présent
+    if alert_link:
+        payload["potentialAction"].append({
+            "@type": "OpenUri",
+            "name": "Voir la source de l'alerte",
+            "targets": [
+                { "os": "default", "uri": alert_link }
+            ]
+        })
+        
+    try:
+        req = urllib.request.Request(
+            webhook_url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            res_code = response.getcode()
+            if res_code in (200, 201, 202):
+                return True, ""
+            else:
+                return False, f"Code HTTP inattendu : {res_code}"
+    except Exception as e:
+        return False, str(e)
+
 # Helper: Récupération des vulnérabilités depuis l'API REST d'OpenCVE
 def fetch_opencve_feed(url):
     opencve_url = os.getenv('OPENCVE_URL', 'http://host.docker.internal:8000').rstrip('/')
@@ -795,6 +858,15 @@ def check_auth():
     if path in ('/api/login', '/api/config'):
         return
         
+    if path == '/api/alerts/cron_check':
+        provided_token = request.args.get('token')
+        conn = get_db_connection()
+        row = conn.execute("SELECT value FROM settings WHERE key = 'cron_token';").fetchone()
+        conn.close()
+        if row and row['value'] and row['value'] == provided_token:
+            return
+        return jsonify({'error': 'Unauthorized', 'message': 'Jeton de sécurité Cron invalide ou manquant.'}), 401
+        
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         return jsonify({'error': 'Unauthorized', 'message': 'Jeton de connexion requis.'}), 401
@@ -836,6 +908,110 @@ def get_config():
     return jsonify({
         'enable_uptime_kuma': os.getenv('ENABLE_UPTIME_KUMA', 'false').lower() == 'true',
         'enable_opencve': os.getenv('OPENCVE_URL') is not None and os.getenv('OPENCVE_URL') != ''
+    })
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT key, value FROM settings;").fetchall()
+    conn.close()
+    
+    settings_dict = {}
+    for r in rows:
+        settings_dict[r['key']] = r['value']
+    return jsonify(settings_dict)
+
+@app.route('/api/settings', methods=['POST'])
+def save_settings():
+    data = request.json or {}
+    conn = get_db_connection()
+    for k, v in data.items():
+        if k in ('teams_webhook_url', 'enable_notifications', 'notification_min_cvss', 'refresh_interval_hours', 'last_refresh_time', 'cron_token'):
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?);", (k, str(v)))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/settings/test_webhook', methods=['POST'])
+def test_webhook():
+    data = request.json or {}
+    webhook_url = data.get('teams_webhook_url')
+    if not webhook_url:
+        conn = get_db_connection()
+        row = conn.execute("SELECT value FROM settings WHERE key = 'teams_webhook_url';").fetchone()
+        conn.close()
+        if row:
+            webhook_url = row['value']
+            
+    if not webhook_url:
+        return jsonify({'error': 'URL de Webhook manquante ou non configurée.'}), 400
+        
+    success, error_msg = send_teams_notification(
+        webhook_url=webhook_url,
+        alert_title="[CVE / CVSS: 9.8] CVE-2026-99999 : Faille critique fictive de démonstration",
+        alert_desc="Une vulnérabilité critique fictive a été détectée dans l'actif 'Test System'. Versions impactées : < 3.2.1. Cette notification confirme le bon fonctionnement du Webhook Teams.",
+        alert_link="https://www.cve.org/",
+        asset_name="Système de Test Herakles",
+        asset_version="3.2.0",
+        cve_id="CVE-2026-99999",
+        cvss_score="9.8",
+        priority="critical",
+        pub_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': f"Échec de l'envoi de la notification Teams : {error_msg}"}), 500
+
+@app.route('/api/alerts/cron_check', methods=['POST'])
+def cron_check():
+    conn = get_db_connection()
+    settings_rows = conn.execute("SELECT key, value FROM settings;").fetchall()
+    settings = {r['key']: r['value'] for r in settings_rows}
+    
+    refresh_interval_hours = 12.0
+    try:
+        refresh_interval_hours = float(settings.get('refresh_interval_hours', '12'))
+    except Exception:
+        pass
+        
+    last_refresh_time_str = settings.get('last_refresh_time', '')
+    conn.close()
+    
+    now = datetime.now()
+    
+    if refresh_interval_hours > 0.0 and last_refresh_time_str:
+        try:
+            last_refresh = datetime.fromisoformat(last_refresh_time_str)
+            elapsed = (now - last_refresh).total_seconds() / 3600.0
+            if elapsed < refresh_interval_hours:
+                return jsonify({
+                    'status': 'skipped',
+                    'reason': f"L'intervalle de {refresh_interval_hours}h n'est pas encore écoulé. Dernier refresh: {last_refresh_time_str} (il y a {elapsed:.2f}h)."
+                })
+        except Exception as e:
+            print(f"Erreur lors du parsing de last_refresh_time : {e}")
+            
+    try:
+        response_obj = refresh_alerts(notify=True)
+        res_data = response_obj.get_json()
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f"Erreur lors de l'exécution du refresh d'alertes : {e}"
+        }), 500
+        
+    conn = get_db_connection()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_refresh_time', ?);", (now.isoformat(),))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'status': 'success',
+        'last_refresh_time': now.isoformat(),
+        'new_alerts_count': res_data.get('new_alerts_count', 0),
+        'unreachable_urls': res_data.get('unreachable_urls', [])
     })
 
 @app.route('/api/login', methods=['POST'])
@@ -1300,8 +1476,18 @@ def resolve_asset_alerts(asset_id):
     })
 
 @app.route('/api/alerts/refresh', methods=['POST'])
-def refresh_alerts():
+def refresh_alerts(notify=False):
     conn = get_db_connection()
+    settings_rows = conn.execute("SELECT key, value FROM settings;").fetchall()
+    settings = {r['key']: r['value'] for r in settings_rows}
+    
+    notify_enabled = settings.get('enable_notifications', 'false').lower() == 'true'
+    teams_webhook_url = settings.get('teams_webhook_url', '')
+    try:
+        notification_min_cvss = float(settings.get('notification_min_cvss', '7.0'))
+    except Exception:
+        notification_min_cvss = 7.0
+        
     assets = conn.execute("SELECT id, nom_produit, version_actuelle FROM assets;").fetchall()
     
     unreachable_urls = []
@@ -1494,6 +1680,7 @@ def refresh_alerts():
                             WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
                         """, (asset_id, url, a['title'])).fetchone()
                         
+                        is_new_alert = False
                         if existing_resolved:
                             resolved_at_ver = existing_resolved['resolved_at_version']
                             if resolved_at_ver is not None and resolved_at_ver != version_actuelle:
@@ -1502,6 +1689,7 @@ def refresh_alerts():
                                     SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
                                     WHERE id = ?;
                                 """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
+                                is_new_alert = True
                             elif resolved_at_ver is None:
                                 conn.execute("""
                                     UPDATE alerts 
@@ -1514,6 +1702,50 @@ def refresh_alerts():
                                 VALUES (?, ?, ?, ?, ?, 0, ?, ?);
                             """, (asset_id, a['title'], a['description'], a['link'], a['pub_date'], url, a['is_secondary']))
                             new_alerts_count += 1
+                            is_new_alert = True
+                            
+                        if is_new_alert and notify and notify_enabled and teams_webhook_url:
+                            # Analyser la criticité
+                            temp_alert = {
+                                'title': a['title'],
+                                'description': a['description'],
+                                'version_actuelle': version_actuelle,
+                                'extracted_version': None
+                            }
+                            status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                            
+                            # Vérifier si c'est une CVE et extraire le score CVSS
+                            cvss_score = None
+                            cvss_match = re.search(r'\[CVE / CVSS:\s*(\d+(?:\.\d+)?)\]', a['title'])
+                            if cvss_match:
+                                cvss_score = float(cvss_match.group(1))
+                            
+                            should_notify = False
+                            if cvss_score is not None:
+                                if cvss_score >= notification_min_cvss:
+                                    should_notify = True
+                            else:
+                                if priority in ('critical', 'high'):
+                                    should_notify = True
+                                    
+                            if should_notify:
+                                cve_id = None
+                                cve_match = re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title'])
+                                if cve_match:
+                                    cve_id = cve_match.group(1)
+                                    
+                                send_teams_notification(
+                                    webhook_url=teams_webhook_url,
+                                    alert_title=a['title'],
+                                    alert_desc=a['description'],
+                                    alert_link=a['link'],
+                                    asset_name=asset['nom_produit'],
+                                    asset_version=version_actuelle,
+                                    cve_id=cve_id,
+                                    cvss_score=cvss_score,
+                                    priority=priority,
+                                    pub_date=a['pub_date']
+                                )
                 
     conn.commit()
     
@@ -1703,6 +1935,28 @@ if __name__ == '__main__':
             expires_at TEXT NOT NULL
         );
         """)
+        
+        # 7.5. Table settings
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        """)
+        
+        # Seeding des paramètres par défaut
+        default_settings = {
+            'teams_webhook_url': '',
+            'enable_notifications': 'false',
+            'notification_min_cvss': '7.0',
+            'refresh_interval_hours': '12',
+            'last_refresh_time': '',
+            'cron_token': secrets.token_hex(16)
+        }
+        for k, v in default_settings.items():
+            existing_setting = conn.execute("SELECT 1 FROM settings WHERE key = ?;", (k,)).fetchone()
+            if not existing_setting:
+                conn.execute("INSERT INTO settings (key, value) VALUES (?, ?);", (k, v))
         
         # 8. Synchronisation/création de l'administrateur
         from werkzeug.security import generate_password_hash

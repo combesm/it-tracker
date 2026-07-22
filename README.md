@@ -151,6 +151,35 @@ cd /var/www/it-tracker/
 
 ---
 
+## 🔔 Configuration des Notifications & Planification (Cron)
+
+L'IT-Tracker intègre un système d'envoi d'alertes par **Microsoft Teams (Webhook)**. Vous pouvez configurer cela directement depuis l'interface utilisateur dans le nouvel onglet **Paramètres**.
+
+### ⚙️ Paramètres disponibles :
+1. **Activer/Désactiver** les notifications Teams.
+2. Définir le **Webhook URL** Teams.
+3. Définir le **Score CVSS Minimum** (ex : notification uniquement si CVSS >= 7.0).
+4. Définir la **Fréquence de rafraîchissement** :
+   * Soit une fréquence gérée par l'application (toutes les 1h, 6h, 12h, 24h) associée à un appel cron régulier (ex: toutes les 30 minutes).
+   * Soit **"Géré par le Cron externe (À chaque appel)"** (permettant un contrôle précis au niveau du serveur).
+
+### ⏱️ Planification de la tâche Cron :
+Pour automatiser la détection d'alertes, ajoutez une ligne dans le `crontab` de votre serveur hôte (`crontab -e`) :
+
+*   **Option 1 : Planification Standard (toutes les 30 minutes)**
+    ```bash
+    */30 * * * * curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
+    ```
+*   **Option 2 : Planification aux Heures de Bureau (9h, 12h, 15h - Lundi au Vendredi)**
+    *Sélectionnez "Géré par le Cron externe" dans les paramètres puis configurez :*
+    ```bash
+    0 9,12,15 * * 1-5 curl -s -X POST "http://<IP_DU_SERVEUR>/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
+    ```
+
+*Le jeton de sécurité (`cron_token`) est disponible dans l'onglet **Paramètres** de l'interface utilisateur.*
+
+---
+
 ## 🛠️ Commandes utiles pour l'Exploitation
 
 *   **Démarrer/Reconstruire l'IT-Tracker** :
