@@ -1864,12 +1864,16 @@ def refresh_alerts(notify=False):
                             if cvss_match:
                                 cvss_score = float(cvss_match.group(1))
                             
+                            is_cve = bool(re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title']))
+                            
                             should_notify = False
                             if cvss_score is not None:
                                 if cvss_score >= notification_min_cvss:
                                     should_notify = True
                             else:
-                                if priority in ('critical', 'high'):
+                                if is_cve:
+                                    should_notify = True
+                                elif priority in ('critical', 'high'):
                                     should_notify = True
                                     
                             if should_notify:
