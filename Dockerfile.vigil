@@ -1,24 +1,19 @@
-# Stage 1: Build Frontend React App
-FROM node:20-alpine AS build-frontend
-WORKDIR /app/frontend
-COPY vigil365/src/m365-security-dashboard-client/package*.json ./
-RUN npm install
-COPY vigil365/src/m365-security-dashboard-client/ ./
-RUN npm run build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+RUN apt-get update && apt-get install -y nodejs npm
 
-# Stage 2: Build ASP.NET Core Backend
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-backend
-WORKDIR /app/backend
-COPY vigil365/src/M365SecurityDashboard.Api/*.csproj ./
+WORKDIR /app
+COPY vigil365/src/ ./src/
+
+WORKDIR /app/src/m365-security-dashboard-client
+RUN npm install && npm run build
+
+WORKDIR /app/src/M365SecurityDashboard.Api
 RUN dotnet restore
-COPY vigil365/src/M365SecurityDashboard.Api/ ./
-COPY --from=build-frontend /app/frontend/dist ./wwwroot
 RUN dotnet publish -c Release -o /app/publish
 
-# Stage 3: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
-COPY --from=build-backend /app/publish ./
+COPY --from=build /app/publish ./
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "M365SecurityDashboard.Api.dll"]
