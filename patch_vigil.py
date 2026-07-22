@@ -19,7 +19,18 @@ def patch_vigil():
                 f.write(content)
             print("-> Added SQLite EF Core package to csproj.")
 
-    # 2. Update Program.cs for dual SQLite / SQL Server support
+    # 2. Fix AppDbContext.cs HasColumnType("nvarchar(max)") for SQLite
+    appdbcontext_path = os.path.join(vigil_dir, 'Data/AppDbContext.cs')
+    if os.path.exists(appdbcontext_path):
+        with open(appdbcontext_path, 'r') as f:
+            content = f.read()
+        if 'HasColumnType("nvarchar(max)")' in content:
+            content = content.replace('.HasColumnType("nvarchar(max)");', ';')
+            with open(appdbcontext_path, 'w') as f:
+                f.write(content)
+            print("-> Removed T-SQL nvarchar(max) from AppDbContext.cs for SQLite compatibility.")
+
+    # 3. Update Program.cs for dual SQLite / SQL Server support
     program_path = os.path.join(vigil_dir, 'Program.cs')
     if os.path.exists(program_path):
         with open(program_path, 'r') as f:
