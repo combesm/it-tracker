@@ -247,6 +247,22 @@ Pour automatiser la détection d'alertes, vous devez enregistrer cette tâche da
 
 ---
 
+### 📊 Importation et Exportation Excel (Onglet Paramètres)
+
+L'application permet d'exporter et d'importer l'intégralité de l'inventaire via des fichiers Excel (`.xlsx`) directement dans l'onglet **Paramètres** :
+
+1. **Exportation Excel** :
+   - **Actifs & Services** : Exporte l'ensemble des actifs avec toutes leurs métadonnées, y compris les **étiquettes (tags)** et les **sources RSS / Vigil**.
+   - **Membres de l'Équipe** : Exporte la liste des responsables (trigrammes et adresses email).
+   - *Remarque* : Les alertes actives ne sont plus exportées dans le fichier pour garder un document d'inventaire propre et exploitable.
+
+2. **Importation Excel** :
+   - Vous permet d'importer des fichiers `.xlsx` pour créer ou mettre à jour des actifs et des membres d'équipe en masse.
+   - Propose un aperçu avant validation avec le décompte des membres et actifs détectés.
+   - Génère un rapport d'exécution détaillé (nombre d'éléments créés, mis à jour et liste des erreurs/avertissements).
+
+---
+
 ## 🛠️ Commandes utiles pour l'Exploitation
 
 *   **Démarrer/Reconstruire l'IT-Tracker** :

@@ -1506,6 +1506,156 @@ def delete_asset(asset_id):
     conn.close()
     return jsonify({'success': True})
 
+@app.route('/api/import/excel', methods=['POST'])
+def import_excel():
+    data = request.json or {}
+    team_data = data.get('team', [])
+    assets_data = data.get('assets', [])
+    
+    conn = get_db_connection()
+    
+    team_added = 0
+    team_updated = 0
+    assets_added = 0
+    assets_updated = 0
+    errors = []
+
+    # 1. Traitement des membres d'équipe
+    for idx, member in enumerate(team_data, start=1):
+        trigramme = str(member.get('trigramme') or '').strip().upper()
+        email = str(member.get('email') or '').strip()
+        
+        if not trigramme or not email:
+            errors.append(f"Équipe ligne {idx} : Trigramme ou email manquant.")
+            continue
+            
+        if len(trigramme) != 3:
+            errors.append(f"Équipe ligne {idx} ({trigramme}) : Le trigramme doit comporter exactement 3 lettres.")
+            continue
+            
+        existing = conn.execute("SELECT email FROM team WHERE trigramme = ?;", (trigramme,)).fetchone()
+        if existing:
+            conn.execute("UPDATE team SET email = ? WHERE trigramme = ?;", (email, trigramme))
+            team_updated += 1
+        else:
+            conn.execute("INSERT INTO team (trigramme, email) VALUES (?, ?);", (trigramme, email))
+            team_added += 1
+
+    # Récupérer la liste à jour de tous les trigrammes valides
+    valid_team = {row['trigramme'] for row in conn.execute("SELECT trigramme FROM team;").fetchall()}
+
+    # 2. Traitement des actifs
+    for idx, a in enumerate(assets_data, start=1):
+        nom_produit = str(a.get('nom_produit') or '').strip()
+        fournisseur = str(a.get('fournisseur') or '').strip() or None
+        version_actuelle = str(a.get('version_actuelle') or '').strip()
+        type_deploiement = str(a.get('type_deploiement') or '').strip()
+        machine_hebergement = str(a.get('machine_hebergement') or '').strip() or None
+        type_licence = str(a.get('type_licence') or 'Perpétuelle').strip()
+        date_expiration = str(a.get('date_expiration') or '').strip() or None
+        responsable = str(a.get('responsable') or '').strip().upper()
+
+        entites = a.get('entites') or 'Groupe'
+        if isinstance(entites, list):
+            entites = ', '.join([str(e).strip() for e in entites if str(e).strip()])
+        else:
+            entites = str(entites).strip()
+        if not entites:
+            entites = 'Groupe'
+
+        tags = a.get('tags') or ''
+        if isinstance(tags, list):
+            tags = ', '.join([str(t).strip() for t in tags if str(t).strip()])
+        else:
+            tags = ', '.join([str(t).strip() for t in str(tags).split(',') if str(t).strip()])
+
+        raw_urls = a.get('urls') or a.get('url_rss') or []
+        if isinstance(raw_urls, str):
+            raw_urls = [u.strip() for u in raw_urls.replace('\n', ',').split(',') if u.strip()]
+        urls_clean = []
+        for u in raw_urls:
+            u_str = str(u).strip()
+            if u_str:
+                val_u = validate_and_clean_url(u_str)
+                if val_u and val_u not in urls_clean:
+                    urls_clean.append(val_u)
+        url_rss = urls_clean[0] if urls_clean else None
+
+        # Validations obligatoires
+        if not nom_produit:
+            errors.append(f"Actif ligne {idx} : Nom du produit obligatoire.")
+            continue
+        if not version_actuelle:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Version actuelle obligatoire.")
+            continue
+        if not type_deploiement:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Type de déploiement obligatoire.")
+            continue
+        if not responsable:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Responsable (trigramme) obligatoire.")
+            continue
+        if responsable not in valid_team:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Responsable '{responsable}' inconnu dans l'équipe.")
+            continue
+
+        if type_deploiement == 'Self-hosted' and not machine_hebergement:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Machine/Serveur requis pour un déploiement Self-hosted.")
+            continue
+        if type_licence == 'Limitée' and not date_expiration:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Date d'expiration requise pour une licence Limitée.")
+            continue
+
+        # Vérifier si l'actif existe déjà (par nom_produit)
+        existing_asset = conn.execute("SELECT id FROM assets WHERE LOWER(nom_produit) = LOWER(?);", (nom_produit,)).fetchone()
+
+        try:
+            if existing_asset:
+                asset_id = existing_asset['id']
+                conn.execute("""
+                    UPDATE assets
+                    SET nom_produit = ?, fournisseur = ?, version_actuelle = ?, type_deploiement = ?,
+                        machine_hebergement = ?, type_licence = ?, date_expiration = ?, url_rss = ?,
+                        responsable = ?, entites = ?, tags = ?
+                    WHERE id = ?;
+                """, (nom_produit, fournisseur, version_actuelle, type_deploiement,
+                      machine_hebergement, type_licence, date_expiration, url_rss,
+                      responsable, entites, tags, asset_id))
+
+                conn.execute("DELETE FROM asset_urls WHERE asset_id = ?;", (asset_id,))
+                for u_idx, u_val in enumerate(urls_clean):
+                    conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, ?);",
+                                 (asset_id, u_val, 1 if u_idx == 0 else 0))
+                assets_updated += 1
+            else:
+                cursor = conn.execute("""
+                    INSERT INTO assets (nom_produit, fournisseur, version_actuelle, type_deploiement,
+                                        machine_hebergement, type_licence, date_expiration, url_rss,
+                                        responsable, entites, tags)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (nom_produit, fournisseur, version_actuelle, type_deploiement,
+                      machine_hebergement, type_licence, date_expiration, url_rss,
+                      responsable, entites, tags))
+                asset_id = cursor.lastrowid
+                for u_idx, u_val in enumerate(urls_clean):
+                    conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, ?);",
+                                 (asset_id, u_val, 1 if u_idx == 0 else 0))
+                assets_added += 1
+        except Exception as e:
+            errors.append(f"Actif ligne {idx} ({nom_produit}) : Erreur SQL {str(e)}")
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'team_added': team_added,
+        'team_updated': team_updated,
+        'assets_added': assets_added,
+        'assets_updated': assets_updated,
+        'errors': errors
+    })
+
+
 # 3. Actions prioritaires (Alertes RSS d'actifs)
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
