@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 import sqlite3
 import os
@@ -947,8 +947,8 @@ def check_auth():
     if not path.startswith('/api/'):
         return
         
-    # La route de login et de config sont publiques
-    if path in ('/api/login', '/api/config'):
+    # La route de login, de config et de vérification Nginx sont publiques
+    if path in ('/api/login', '/api/config', '/api/verify-auth'):
         return
         
     if path == '/api/alerts/cron_check':
@@ -994,6 +994,12 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:5000 http://localhost:8000;"
+    
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        response.set_cookie('tracker_token', token, max_age=86400, path='/', samesite='Lax')
+
     return response
 
 @app.route('/api/config', methods=['GET'])
@@ -1137,11 +1143,13 @@ def login():
     conn.commit()
     conn.close()
     
-    return jsonify({
+    resp = make_response(jsonify({
         'success': True,
         'token': token,
         'username': username
-    })
+    }))
+    resp.set_cookie('tracker_token', token, max_age=86400, path='/', samesite='Lax')
+    return resp
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
@@ -1152,7 +1160,41 @@ def logout():
         conn.execute("DELETE FROM sessions WHERE token = ?;", (token,))
         conn.commit()
         conn.close()
-    return jsonify({'success': True})
+    resp = make_response(jsonify({'success': True}))
+    resp.delete_cookie('tracker_token', path='/')
+    return resp
+
+@app.route('/api/verify-auth', methods=['GET', 'HEAD'])
+def verify_auth():
+    token = request.cookies.get('tracker_token')
+    if not token:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        else:
+            token = request.args.get('token')
+
+    if not token:
+        return '', 401
+
+    conn = get_db_connection()
+    session = conn.execute(
+        "SELECT username, expires_at FROM sessions WHERE token = ?;", 
+        (token,)
+    ).fetchone()
+    conn.close()
+
+    if not session:
+        return '', 401
+
+    try:
+        expires_at = datetime.fromisoformat(session['expires_at'])
+        if expires_at < datetime.now():
+            return '', 401
+    except Exception:
+        return '', 401
+
+    return '', 200
 
 @app.route('/api/me', methods=['GET'])
 def get_me():

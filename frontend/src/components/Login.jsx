@@ -33,6 +33,14 @@ export default function Login({ backendUrl, onLoginSuccess }) {
       if (response.ok && data.success) {
         localStorage.setItem('tracker_token', data.token);
         localStorage.setItem('tracker_username', data.username);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectTo = urlParams.get('redirect');
+        if (redirectTo && redirectTo.startsWith('/')) {
+          window.location.href = redirectTo;
+          return;
+        }
+
         onLoginSuccess(data.token);
       } else {
         setError(data.error || "Une erreur est survenue lors de la connexion.");
