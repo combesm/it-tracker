@@ -223,6 +223,9 @@ fi
 echo "-> Configuring/Updating .env file with OpenCVE and IT-Tracker credentials..."
 PREV_UPTIME_KUMA="true"
 PREV_VIGIL365="true"
+PREV_TENANT_ID="YOUR_TENANT_ID"
+PREV_CLIENT_ID="YOUR_CLIENT_ID"
+PREV_CLIENT_SECRET="YOUR_CLIENT_SECRET"
 if [ -f .env ]; then
     ENV_VAL=$(grep -E "^ENABLE_UPTIME_KUMA=" .env | cut -d'=' -f2 | tr -d '\r')
     if [ "$ENV_VAL" = "false" ]; then
@@ -232,6 +235,12 @@ if [ -f .env ]; then
     if [ "$ENV_VIGIL" = "false" ]; then
         PREV_VIGIL365="false"
     fi
+    VAL_TENANT=$(grep -E "^VIGIL365_TENANT_ID=" .env | cut -d'=' -f2- | tr -d '\r')
+    [ -n "$VAL_TENANT" ] && PREV_TENANT_ID="$VAL_TENANT"
+    VAL_CLIENT=$(grep -E "^VIGIL365_CLIENT_ID=" .env | cut -d'=' -f2- | tr -d '\r')
+    [ -n "$VAL_CLIENT" ] && PREV_CLIENT_ID="$VAL_CLIENT"
+    VAL_SECRET=$(grep -E "^VIGIL365_CLIENT_SECRET=" .env | cut -d'=' -f2- | tr -d '\r')
+    [ -n "$VAL_SECRET" ] && PREV_CLIENT_SECRET="$VAL_SECRET"
 fi
 
 cat <<EOF > .env
@@ -250,9 +259,9 @@ ENABLE_UPTIME_KUMA=${PREV_UPTIME_KUMA}
 
 # Intégration Vigil365 (M365 Security Alert Dashboard)
 ENABLE_VIGIL365=${PREV_VIGIL365}
-VIGIL365_TENANT_ID=${VIGIL365_TENANT_ID:-YOUR_TENANT_ID}
-VIGIL365_CLIENT_ID=${VIGIL365_CLIENT_ID:-YOUR_CLIENT_ID}
-VIGIL365_CLIENT_SECRET=${VIGIL365_CLIENT_SECRET:-YOUR_CLIENT_SECRET}
+VIGIL365_TENANT_ID=${VIGIL365_TENANT_ID:-$PREV_TENANT_ID}
+VIGIL365_CLIENT_ID=${VIGIL365_CLIENT_ID:-$PREV_CLIENT_ID}
+VIGIL365_CLIENT_SECRET=${VIGIL365_CLIENT_SECRET:-$PREV_CLIENT_SECRET}
 EOF
 
 # 9. Build and run IT-Tracker service
