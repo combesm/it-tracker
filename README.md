@@ -126,38 +126,66 @@ L'ensemble des données d'OpenCVE est stocké de manière isolée pour éviter t
 
 ## 🔀 Migration / Déploiement sur un autre serveur (Portabilité)
 
-Si vous devez transférer ou installer l'IT-Tracker sur un serveur physique ou virtuel tiers, suivez ces étapes simples :
+Si vous devez transférer l'application **IT-Tracker** et l'ensemble de ses services (**OpenCVE**, **Vigil365**, **Uptime Kuma**) sur un autre serveur Linux, tout a été préparé pour que la migration se fasse de manière simple, sécurisée et sans perte de données.
 
-### Étape 1 : Copier le projet sur le nouveau serveur
-Archivez et transférez l'intégralité du répertoire du projet (par exemple via rsync ou scp) :
+### 📋 Checklist des Données & Volumes Persistants
+Avant de migrer, assurez-vous d'emporter les dossiers de données suivants (tous situés à la racine du projet) :
+- **`data/`** : Contient `database.db` (Inventaire des actifs, équipements, configuration des alertes & jetons de l'IT-Tracker).
+- **`opencve_data/`** : Contient la base de données PostgreSQL d'OpenCVE (dictionnaire CPE/CVE de ~2,8 Go) et le fichier de configuration `opencve.cfg`.
+- **`vigil_data/`** : Contient `vigil365.db` (Alertes de sécurité M365 et paramètres de Vigil365).
+- **`uptime_data/`** : Contient les données d'Uptime Kuma (sondes, historique, base MariaDB).
+- **Secrets & Identifiants** (Optionnel mais recommandé) : `.env`, `it_tracker_creds.txt`, `opencve_api_creds.txt`.
+
+---
+
+### 📦 Procédure de Migration en 3 Étapes
+
+#### Étape 1 : Créer une archive complète du projet sur le serveur source
+Sur le serveur actuel, exécutez la commande suivante en `sudo` pour préserver les permissions des conteneurs Docker (PostgreSQL, MariaDB, etc.) :
 ```bash
-rsync -avz --exclude="venv" --exclude="node-env" --exclude="node_modules" /home/host/IT-TRACKER/ user@nouveau-serveur:/var/www/it-tracker/
+cd /home/muc-host/
+sudo tar --exclude="IT-TRACKER/venv" \
+         --exclude="IT-TRACKER/node-env" \
+         --exclude="IT-TRACKER/node_modules" \
+         --exclude="IT-TRACKER/__pycache__" \
+         -czvf it_tracker_migration.tar.gz IT-TRACKER/
 ```
 
-### Étape 2 : Lancer le script d'installation automatique
-Sur le nouveau serveur, lancez simplement :
+#### Étape 2 : Transférer l'archive sur le nouveau serveur
+Transférez le fichier `it_tracker_migration.tar.gz` sur votre nouveau serveur via `scp` ou `rsync` :
 ```bash
-cd /var/www/it-tracker/
+scp it_tracker_migration.tar.gz user@nouveau-serveur:/home/user/
+```
+
+#### Étape 3 : Extraire et Lancer le déploiement automatique sur le nouveau serveur
+Sur la nouvelle machine :
+```bash
+# 1. Extraire l'archive
+tar -xzvf it_tracker_migration.tar.gz
+cd IT-TRACKER/
+
+# 2. Lancer le script de déploiement automatique
 ./deploy-all.sh
 ```
-> [!NOTE]
-> Le script détectera la nouvelle IP, re-générera un fichier `opencve.cfg` adapté, et mettra automatiquement à jour le fichier `.env` avec la nouvelle adresse IP pour `OPENCVE_HOST_HEADER`.
 
-### Étape 3 : Conserver ou migrer votre historique d'inventaire
-- **Conserver l'inventaire existant** : Copiez le dossier `data/` (contenant le fichier `database.db` SQLite de l'inventaire) de l'ancien serveur vers le nouveau. Le conteneur se chargera de lire le fichier sans aucune perte de données.
-- **Conserver la base de données OpenCVE pré-importée (Hautement Recommandé)** : 
-  Pour éviter de réimporter et de retélécharger l'intégralité de l'historique du NVD depuis 2002 (ce qui prend environ 2h30 à 3h en raison des limites de débit du NIST), vous devez copier le dossier `opencve_data/` (qui pèse actuellement **environ 2,8 Go**) sur le nouveau serveur.
-  
-  **Commande de sauvegarde (archive compressée) :**
-  ```bash
-  tar -czvf opencve_backup.tar.gz opencve_data/
-  ```
-  **Commande de restauration (sur le nouveau serveur) :**
-  ```bash
-  tar -xzvf opencve_backup.tar.gz
-  ```
-- **Conserver ou migrer les données d'Uptime Kuma** :
-  Si vous utilisez Uptime Kuma et souhaitez migrer ses configurations (sondes, notifications, etc.), copiez le contenu du dossier `uptime_data/` (contenant la configuration et le dossier de base de données `mariadb/`) de l'ancien serveur/instance vers le nouveau dossier `./uptime_data/` avant de lancer `./deploy-all.sh`.
+> [!NOTE]
+> Le script `./deploy-all.sh` va automatiquement :
+> 1. Détecter la nouvelle adresse IP du serveur.
+> 2. Mettre à jour `server_name` dans `opencve_data/conf/opencve.cfg` et `OPENCVE_HOST_HEADER` dans `.env`.
+> 3. Installer et configurer Nginx.
+> 4. Démarrer et reconnecter tous les conteneurs Docker aux données existantes.
+
+---
+
+### 🔔 Étape Finale : Remettre en place le Cron (si activé)
+Si vous aviez configuré la vérification automatique des alertes Teams sur l'ancien serveur, réinstallez la ligne cron sur le nouveau serveur :
+```bash
+crontab -e
+```
+Ajoutez la ligne avec l'IP du nouveau serveur ou `localhost` :
+```bash
+*/30 * * * * curl -s -X POST "http://localhost/api/alerts/cron_check?token=<VOTRE_TOKEN>" > /dev/null
+```
 
 ---
 
