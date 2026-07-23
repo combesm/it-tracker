@@ -107,7 +107,8 @@ smtp_username =
 smtp_password =
 EOF
 else
-    echo "-> opencve_data/conf/opencve.cfg already exists."
+    echo "-> opencve_data/conf/opencve.cfg already exists. Updating server_name to ${PRIMARY_IP}..."
+    sed -i "s/^server_name = .*/server_name = ${PRIMARY_IP}/" opencve_data/conf/opencve.cfg
 fi
 
 # 5. Build and run OpenCVE services
