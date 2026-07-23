@@ -236,4 +236,5 @@ Pour automatiser la détection d'alertes, vous devez enregistrer cette tâche da
 *   **Accès aux interfaces web** :
     - **IT-Tracker** : `http://<IP_DU_SERVEUR>/`
     - **Console OpenCVE** : `http://<IP_DU_SERVEUR>/opencve/`
+    - **Vigil365 (Sécurisé par authentification IT-Tracker)** : `http://<IP_DU_SERVEUR>/vigil/`
     - **Uptime Kuma** : `http://<IP_DU_SERVEUR>:3001/`
