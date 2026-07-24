@@ -170,8 +170,8 @@ cd IT-TRACKER/
 
 > [!NOTE]
 > Le script `./deploy-all.sh` va automatiquement :
-> 1. Détecter la nouvelle adresse IP du serveur.
-> 2. Mettre à jour `server_name` dans `opencve_data/conf/opencve.cfg` et `OPENCVE_HOST_HEADER` dans `.env`.
+> 1. Détecter l'adresse IP ou le nom de domaine du serveur (conservé s'il est déjà configuré ou surchargeable via la variable `SERVER_DOMAIN`).
+> 2. Mettre à jour `server_name` dans `opencve_data/conf/opencve.cfg` et `OPENCVE_HOST_HEADER` dans `.env` avec cette adresse/nom de domaine.
 > 3. Installer et configurer Nginx.
 > 4. Démarrer et reconnecter tous les conteneurs Docker aux données existantes.
 
