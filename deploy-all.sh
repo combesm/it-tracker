@@ -59,7 +59,16 @@ PRIMARY_IP=$(hostname -I | awk '{print $1}')
 if [ -z "$PRIMARY_IP" ]; then
     PRIMARY_IP="localhost"
 fi
+
+# Detect existing domain/IP from opencve.cfg if present, otherwise fallback to PRIMARY_IP
+EXISTING_DOMAIN=""
+if [ -f "opencve_data/conf/opencve.cfg" ]; then
+    EXISTING_DOMAIN=$(grep -E "^server_name = " opencve_data/conf/opencve.cfg | cut -d'=' -f2 | tr -d ' \r')
+fi
+
+SERVER_DOMAIN="${SERVER_DOMAIN:-${EXISTING_DOMAIN:-$PRIMARY_IP}}"
 echo "-> Detected primary IP: $PRIMARY_IP"
+echo "-> Using server domain/IP: $SERVER_DOMAIN"
 
 # 4. Generate local configuration if not exists
 mkdir -p opencve_data/conf opencve_data/db
@@ -68,7 +77,7 @@ if [ ! -f "opencve_data/conf/opencve.cfg" ]; then
     SECRET_KEY=$(openssl rand -hex 24)
     cat <<EOF > opencve_data/conf/opencve.cfg
 [core]
-server_name = ${PRIMARY_IP}
+server_name = ${SERVER_DOMAIN}
 secret_key = ${SECRET_KEY}
 database_uri = postgresql://opencve:opencvepassword@postgres-opencve:5432/opencve
 celery_broker_url = redis://redis-opencve:6379/0
@@ -107,8 +116,8 @@ smtp_username =
 smtp_password =
 EOF
 else
-    echo "-> opencve_data/conf/opencve.cfg already exists. Updating server_name to ${PRIMARY_IP}..."
-    sed -i "s/^server_name = .*/server_name = ${PRIMARY_IP}/" opencve_data/conf/opencve.cfg
+    echo "-> opencve_data/conf/opencve.cfg already exists. Updating server_name to ${SERVER_DOMAIN}..."
+    sed -i "s/^server_name = .*/server_name = ${SERVER_DOMAIN}/" opencve_data/conf/opencve.cfg
 fi
 
 # 5. Build and run OpenCVE services
@@ -249,7 +258,7 @@ cat <<EOF > .env
 OPENCVE_URL=http://opencve-webserver:8000/opencve
 OPENCVE_USER=${API_USER}
 OPENCVE_PASSWORD=${API_PASSWORD}
-OPENCVE_HOST_HEADER=${PRIMARY_IP}
+OPENCVE_HOST_HEADER=${SERVER_DOMAIN}
 
 # Informations d'administration pour l'IT-Tracker
 TRACKER_ADMIN_USER=${TRACKER_USER}
