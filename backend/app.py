@@ -1683,18 +1683,23 @@ def get_alerts():
 
 @app.route('/api/alerts/resolve/<int:alert_id>', methods=['POST'])
 def resolve_alert(alert_id):
+    data = request.get_json(silent=True) or {}
+    resolved_by = data.get('resolved_by') or data.get('resolveur')
+
     conn = get_db_connection()
-    # Récupérer la version actuelle de l'actif associé à cette alerte
+    # Récupérer la version actuelle et le responsable de l'actif associé à cette alerte
     asset_row = conn.execute("""
-        SELECT asst.version_actuelle 
+        SELECT asst.version_actuelle, asst.responsable 
         FROM assets asst
         JOIN alerts al ON al.asset_id = asst.id
         WHERE al.id = ?;
     """, (alert_id,)).fetchone()
     
     version_actuelle = asset_row['version_actuelle'] if asset_row else None
-    
-    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE id = ?;", (version_actuelle, alert_id))
+    if not resolved_by and asset_row:
+        resolved_by = asset_row['responsable']
+
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ? WHERE id = ?;", (version_actuelle, resolved_by, alert_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1717,7 +1722,7 @@ def get_resolved_alerts():
 @app.route('/api/alerts/reactivate/<int:alert_id>', methods=['POST'])
 def reactivate_alert(alert_id):
     conn = get_db_connection()
-    conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL WHERE id = ?;", (alert_id,))
+    conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL WHERE id = ?;", (alert_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1726,7 +1731,8 @@ def reactivate_alert(alert_id):
 def resolve_asset_alerts(asset_id):
     data = request.get_json(silent=True) or {}
     new_version = data.get('new_version')
-    
+    resolved_by = data.get('resolved_by') or data.get('resolveur')
+
     conn = get_db_connection()
     
     # Si non fourni, tenter de le trouver dans les alertes actives de cet actif
@@ -1780,10 +1786,12 @@ def resolve_asset_alerts(asset_id):
             parsed_versions.sort(key=lambda x: x[0], reverse=True)
             new_version = parsed_versions[0][1]
             
-    # Récupérer l'ancienne version et le nom du produit
-    asset = conn.execute("SELECT nom_produit, version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
+    # Récupérer l'ancienne version, le nom du produit et le responsable par défaut
+    asset = conn.execute("SELECT nom_produit, version_actuelle, responsable FROM assets WHERE id = ?;", (asset_id,)).fetchone()
     ancienne_version = asset['version_actuelle'] if asset else 'N/A'
     nom_produit = asset['nom_produit'] if asset else 'Inconnu'
+    if not resolved_by and asset:
+        resolved_by = asset['responsable']
 
     # Mettre à jour la version de l'actif
     if new_version:
@@ -1796,15 +1804,15 @@ def resolve_asset_alerts(asset_id):
         if clean_ver != ancienne_version:
             now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
             conn.execute("""
-                INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj)
-                VALUES (?, ?, ?, ?, ?);
-            """, (asset_id, nom_produit, ancienne_version, clean_ver, now_str))
+                INSERT INTO update_logs (asset_id, nom_produit, ancienne_version, nouvelle_version, date_maj, resolved_by)
+                VALUES (?, ?, ?, ?, ?, ?);
+            """, (asset_id, nom_produit, ancienne_version, clean_ver, now_str, resolved_by))
         
     # Récupérer la version de l'actif après mise à jour
     updated_asset = conn.execute("SELECT version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
     updated_ver = updated_asset['version_actuelle'] if updated_asset else None
     
-    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, asset_id))
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, resolved_by, asset_id))
     conn.commit()
     conn.close()
     
@@ -2200,6 +2208,35 @@ def get_update_logs():
     conn.close()
     return jsonify([dict(l) for l in logs])
 
+@app.route('/api/update-logs/revert/<int:log_id>', methods=['POST'])
+def revert_update_log(log_id):
+    conn = get_db_connection()
+    log = conn.execute("SELECT * FROM update_logs WHERE id = ?;", (log_id,)).fetchone()
+    if not log:
+        conn.close()
+        return jsonify({'error': 'Log non trouvé'}), 404
+        
+    asset_id = log['asset_id']
+    ancienne_version = log['ancienne_version']
+    nouvelle_version = log['nouvelle_version']
+    
+    # 1. Remettre l'actif à son ancienne version
+    conn.execute("UPDATE assets SET version_actuelle = ? WHERE id = ?;", (ancienne_version, asset_id))
+    
+    # 2. Réactiver les alertes qui avaient été résolues à cette nouvelle version
+    conn.execute("""
+        UPDATE alerts 
+        SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL 
+        WHERE asset_id = ? AND resolved_at_version = ?;
+    """, (asset_id, nouvelle_version))
+    
+    # 3. Supprimer le log de mise à jour
+    conn.execute("DELETE FROM update_logs WHERE id = ?;", (log_id,))
+    
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
 # Redirection vers l'application frontend en production
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -2227,6 +2264,7 @@ if __name__ == '__main__':
             ancienne_version TEXT NOT NULL,
             nouvelle_version TEXT NOT NULL,
             date_maj TEXT NOT NULL,
+            resolved_by TEXT,
             FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
         );
         """)
@@ -2252,7 +2290,7 @@ if __name__ == '__main__':
             if not check:
                 conn.execute("INSERT INTO asset_urls (asset_id, url, is_primary) VALUES (?, ?, 1);", (asset_id, url))
         
-        # 4. Colonnes alerts
+        # 4. Colonnes alerts et update_logs
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN trigger_url TEXT;")
         except sqlite3.OperationalError:
@@ -2265,6 +2303,16 @@ if __name__ == '__main__':
             
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN resolved_at_version TEXT;")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN resolved_by TEXT;")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE update_logs ADD COLUMN resolved_by TEXT;")
         except sqlite3.OperationalError:
             pass
             

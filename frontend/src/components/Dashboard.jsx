@@ -18,6 +18,8 @@ export default function Dashboard({ backendUrl }) {
   const [resolutionModalOpen, setResolutionModalOpen] = useState(false);
   const [selectedAssetForResolution, setSelectedAssetForResolution] = useState(null);
   const [resolutionNewVersion, setResolutionNewVersion] = useState('');
+  const [resolutionResolver, setResolutionResolver] = useState('');
+  const [team, setTeam] = useState([]);
 
   // States for Update Logs
   const [updateLogs, setUpdateLogs] = useState([]);
@@ -124,12 +126,27 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
-  const handleResolveAssetAlerts = async (assetId, newVersion) => {
+  const fetchTeam = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/team`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeam(data);
+      }
+    } catch (err) {
+      console.error("Erreur lors de la récupération de l'équipe:", err);
+    }
+  };
+
+  const handleResolveAssetAlerts = async (assetId, newVersion, resolver) => {
     try {
       const res = await fetch(`${backendUrl}/api/alerts/resolve-asset/${assetId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_version: newVersion })
+        body: JSON.stringify({ 
+          new_version: newVersion,
+          resolved_by: resolver
+        })
       });
       if (res.ok) {
         // Retirer toutes les alertes de cet actif de l'état local
@@ -151,6 +168,7 @@ export default function Dashboard({ backendUrl }) {
     fetchAlerts();
     fetchCertAlerts();
     fetchUpdateLogs();
+    fetchTeam();
   }, []);
 
   // Formater la date en français propre
@@ -469,6 +487,7 @@ export default function Dashboard({ backendUrl }) {
                                     setSelectedAssetForResolution(asset);
                                     const cleanVer = newVersion ? (newVersion.toLowerCase().startsWith('v') ? newVersion.substring(1) : newVersion) : (asset.version_actuelle || '');
                                     setResolutionNewVersion(cleanVer);
+                                    setResolutionResolver(asset.responsable || (team.length > 0 ? team[0].trigramme : ''));
                                     setResolutionModalOpen(true);
                                   }}
                                   className="px-3 py-1.5 bg-brand-successBg text-brand-success hover:bg-brand-success/15 border border-brand-success/20 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-sm"
@@ -683,6 +702,28 @@ export default function Dashboard({ backendUrl }) {
                   className="w-full px-4 py-2.5 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary font-medium"
                 />
               </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-brand-dark uppercase tracking-wider mb-2">
+                  Résolveur (Responsable de la résolution)
+                </label>
+                <select
+                  value={resolutionResolver}
+                  onChange={(e) => setResolutionResolver(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm border border-brand-border rounded-lg focus:outline-none focus:border-brand-primary font-medium bg-white text-brand-dark"
+                >
+                  {team.map((member) => (
+                    <option key={member.trigramme} value={member.trigramme}>
+                      {member.trigramme} ({member.email})
+                    </option>
+                  ))}
+                  {selectedAssetForResolution.responsable && !team.some(t => t.trigramme === selectedAssetForResolution.responsable) && (
+                    <option value={selectedAssetForResolution.responsable}>
+                      {selectedAssetForResolution.responsable}
+                    </option>
+                  )}
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center justify-end space-x-3 border-t border-brand-border pt-4">
@@ -692,18 +733,18 @@ export default function Dashboard({ backendUrl }) {
                   setResolutionModalOpen(false);
                   setSelectedAssetForResolution(null);
                 }}
-                className="px-4 py-2 text-xs font-semibold text-brand-text/75 hover:bg-brand-bg rounded-lg transition-all"
+                className="px-4 py-2 text-xs font-semibold text-brand-text/75 hover:bg-brand-bg rounded-lg transition-all cursor-pointer"
               >
                 Annuler
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  handleResolveAssetAlerts(selectedAssetForResolution.asset_id, resolutionNewVersion);
+                  handleResolveAssetAlerts(selectedAssetForResolution.asset_id, resolutionNewVersion, resolutionResolver);
                   setResolutionModalOpen(false);
                   setSelectedAssetForResolution(null);
                 }}
-                className="px-4 py-2 bg-brand-primary text-white text-xs font-semibold rounded-lg hover:bg-brand-primary/95 transition-all shadow-sm"
+                className="px-4 py-2 bg-brand-primary text-white text-xs font-semibold rounded-lg hover:bg-brand-primary/95 transition-all shadow-sm cursor-pointer"
               >
                 Valider la mise à jour
               </button>

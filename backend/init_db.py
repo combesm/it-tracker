@@ -65,7 +65,7 @@ def init_db():
     );
     """)
 
-    # Table Alerts (avec la colonne description, trigger_url et is_secondary)
+    # Table Alerts (avec la colonne description, trigger_url, is_secondary et resolved_by)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,6 +78,21 @@ def init_db():
         trigger_url TEXT,
         is_secondary INTEGER DEFAULT 0,
         resolved_at_version TEXT,
+        resolved_by TEXT,
+        FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+    );
+    """)
+
+    # Table Update Logs (historique des résolutions et versions)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS update_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL,
+        nom_produit TEXT NOT NULL,
+        ancienne_version TEXT NOT NULL,
+        nouvelle_version TEXT NOT NULL,
+        date_maj TEXT NOT NULL,
+        resolved_by TEXT,
         FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
     );
     """)
