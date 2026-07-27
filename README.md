@@ -263,7 +263,7 @@ L'application permet d'exporter et d'importer l'intégralité de l'inventaire vi
 1. **Exportation Excel** :
    - **Actifs & Services** : Exporte l'ensemble des actifs avec toutes leurs métadonnées, y compris les **étiquettes (tags)** et les **sources RSS / Vigil**.
    - **Membres de l'Équipe** : Exporte la liste des responsables (trigrammes et adresses email).
-   - *Remarque* : Les alertes actives ne sont plus exportées dans le fichier pour garder un document d'inventaire propre et exploitable.
+   - **Logs & Historique** : Exporte le fil chronologique complet des mises à jour de version et des résolutions d'alertes CVE (avec leurs résolveurs et horodatages).
 
 2. **Importation Excel** :
    - Vous permet d'importer des fichiers `.xlsx` pour créer ou mettre à jour des actifs et des membres d'équipe en masse.

@@ -107,6 +107,77 @@ export default function Settings({ backendUrl }) {
       const resTeam = await fetch(`${backendUrl}/api/team`);
       const team = resTeam.ok ? await resTeam.json() : [];
 
+      // 3. Récupération des Logs et des Alertes Résolues
+      const [resLogs, resAlerts] = await Promise.all([
+        fetch(`${backendUrl}/api/update-logs`),
+        fetch(`${backendUrl}/api/alerts/resolved`)
+      ]);
+
+      const logsDataRaw = resLogs.ok ? await resLogs.json() : [];
+      const alertsDataRaw = resAlerts.ok ? await resAlerts.json() : [];
+
+      const formatDateStr = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        try {
+          const d = new Date(dateStr);
+          return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+          });
+        } catch {
+          return dateStr;
+        }
+      };
+
+      const parseTs = (dateStr) => {
+        if (!dateStr) return 0;
+        const frMatch = String(dateStr).match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+        if (frMatch) {
+          const [, day, month, year, hours = '00', minutes = '00'] = frMatch;
+          return new Date(year, month - 1, day, hours, minutes).getTime();
+        }
+        const parsed = Date.parse(dateStr);
+        return isNaN(parsed) ? 0 : parsed;
+      };
+
+      const isSecurityAlert = (alert) => {
+        const title = (alert.title || '').toLowerCase();
+        const desc = (alert.description || '').toLowerCase();
+        const full = `${title} ${desc}`;
+        if (title.startsWith('mise à jour disponible')) return false;
+        const securityKeywords = ['cve-', 'certfr-', 'cvss', 'vulnérabilité', 'vulnerabilite', 'faille', 'sécurité', 'securite', 'exploit', 'advisory', 'patch de sécurité'];
+        return securityKeywords.some(kw => full.includes(kw));
+      };
+
+      // Mises à jour
+      const formattedUpdateLogs = logsDataRaw.map(l => ({
+        "Type d'événement": "MAJ",
+        "Date & Heure": l.date_maj || 'N/A',
+        "Actif": l.nom_produit || '',
+        "Détails de l'événement": `Passage de ${l.ancienne_version || 'N/A'} à ${l.nouvelle_version || ''}`,
+        "Résolveur": l.resolved_by || 'N/A',
+        sortTime: parseTs(l.date_maj)
+      }));
+
+      // Alertes / CVEs résolues
+      const formattedCveLogs = alertsDataRaw
+        .filter(a => isSecurityAlert(a))
+        .map(a => ({
+          "Type d'événement": "CVE",
+          "Date & Heure": formatDateStr(a.pub_date),
+          "Actif": a.nom_produit || '',
+          "Détails de l'événement": `${a.title || ''} (Résolu en v${a.resolved_at_version || 'N/A'})`,
+          "Résolveur": a.resolved_by || a.responsable || 'N/A',
+          sortTime: parseTs(a.pub_date)
+        }));
+
+      // Combiner et trier chronologiquement
+      const allLogsFormatted = [...formattedUpdateLogs, ...formattedCveLogs];
+      allLogsFormatted.sort((a, b) => (b.sortTime || 0) - (a.sortTime || 0));
+
+      const cleanLogsExport = allLogsFormatted.map(({ sortTime, ...rest }) => rest);
+
       // Initialiser le classeur Excel
       const wb = XLSX.utils.book_new();
 
@@ -136,9 +207,13 @@ export default function Settings({ backendUrl }) {
       const wsTeam = XLSX.utils.json_to_sheet(teamData);
       XLSX.utils.book_append_sheet(wb, wsTeam, "Membres de l'Équipe");
 
+      // Onglet 3 : Logs & Historique
+      const wsLogs = XLSX.utils.json_to_sheet(cleanLogsExport);
+      XLSX.utils.book_append_sheet(wb, wsLogs, "Logs & Historique");
+
       // Télécharger le fichier Excel
       XLSX.writeFile(wb, "Inventaire_IT_Herakles.xlsx");
-      showFeedback('success', 'Inventaire Excel exporté avec succès !');
+      showFeedback('success', 'Inventaire Excel et Historique des Logs exportés avec succès !');
     } catch (err) {
       console.error("Erreur lors de l'export Excel:", err);
       showFeedback('error', "Une erreur est survenue lors de la génération du fichier Excel.");
@@ -361,7 +436,7 @@ export default function Settings({ backendUrl }) {
                 Exporter l'inventaire
               </h3>
               <p className="text-xs text-brand-text/70 mt-1">
-                Téléchargez la totalité de vos actifs (avec leurs étiquettes et leurs sources) ainsi que les membres de l'équipe au format Excel (`.xlsx`).
+                Téléchargez la totalité de vos actifs, la liste des membres d'équipe ainsi que le journal complet des logs et de l'historique au format Excel (`.xlsx`).
               </p>
             </div>
 
