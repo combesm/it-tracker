@@ -202,7 +202,7 @@ Les alertes envoyées à Microsoft Teams utilisent le format moderne **Adaptive 
   * **Moyen (score 4.0 - 6.9)** : Bandeau et pastille bleu (`🟡 MOYEN`).
   * **Bas (score < 4.0)** : Bandeau et pastille vert (`🟢 BAS`).
   * **Non spécifié (N/A)** : Couleur neutre (`⚪ N/A`).
-* **Structure claire** : Les détails sur l'actif impacté, la criticité, la date de publication et la description de la faille sont présentés sous forme de blocs structurés et de colonnes d'informations.
+* **Structure claire** : Les détails sur l'actif impacté, le responsable associé (trigramme et email), la criticité, la date de publication et la description de la faille sont présentés sous forme de blocs structurés et de colonnes d'informations.
 * **Bouton d'action direct** : Un bouton d'action moderne permet d'accéder directement au lien source de la CVE ou de l'alerte pour une investigation immédiate.
 
 ### ⚙️ Paramètres disponibles :
