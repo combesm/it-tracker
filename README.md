@@ -247,6 +247,15 @@ Pour automatiser la détection d'alertes, vous devez enregistrer cette tâche da
 
 ---
 
+### 🛡️ Résolution des Alertes & Suivi des Résolveurs
+
+Lors de la validation d'une mise à jour ou de la résolution d'une alerte de sécurité :
+- Une **fenêtre modale** permet de saisir la nouvelle version de l'actif ainsi que de sélectionner la **personne résolvant l'alerte (Résolveur)** dans la liste déroulante des membres d'équipe enregistrés.
+- Par défaut, le **résolveur** pré-sélectionné est le responsable de l'actif concerné.
+- Le résolveur est consigné en base de données dans la table `update_logs` et sur les alertes résolues (`alerts`), puis affiché sous forme d'un badge dans les onglets **Logs et Historique** (historique des mises à jour et alertes résolues).
+
+---
+
 ### 📊 Importation et Exportation Excel (Onglet Paramètres)
 
 L'application permet d'exporter et d'importer l'intégralité de l'inventaire via des fichiers Excel (`.xlsx`) directement dans l'onglet **Paramètres** :
