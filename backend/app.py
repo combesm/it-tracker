@@ -340,7 +340,7 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, asset_name, asset_version, cve_id, cvss_score, priority, pub_date):
+def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, asset_name, asset_version, cve_id, cvss_score, priority, pub_date, responsable=None):
     if not webhook_url:
         return False, "URL Webhook vide"
     
@@ -441,6 +441,7 @@ def send_teams_notification(webhook_url, alert_title, alert_desc, alert_link, as
                                         { "title": "Alerte / Titre", "value": alert_title or "Non spécifié" },
                                         { "title": "Score CVSS", "value": cvss_display },
                                         { "title": "Criticité", "value": priority.upper() if priority else "N/A" },
+                                        { "title": "Responsable", "value": responsable or "Non spécifié" },
                                         { "title": "Date pub.", "value": pub_date or "Non spécifiée" }
                                     ],
                                     "spacing": "Medium"
@@ -1056,7 +1057,8 @@ def test_webhook():
         cve_id="CVE-2026-99999",
         cvss_score="9.8",
         priority="critical",
-        pub_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        pub_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        responsable="ADM (admin@example.com)"
     )
     
     if success:
@@ -1834,7 +1836,11 @@ def refresh_alerts(notify=False):
     except Exception:
         notification_min_cvss = 7.0
         
-    assets = conn.execute("SELECT id, nom_produit, version_actuelle FROM assets;").fetchall()
+    assets = conn.execute("""
+        SELECT a.id, a.nom_produit, a.version_actuelle, a.responsable, t.email as email_responsable
+        FROM assets a
+        LEFT JOIN team t ON a.responsable = t.trigramme;
+    """).fetchall()
     
     unreachable_urls = []
     new_alerts_count = 0
@@ -2098,6 +2104,10 @@ def refresh_alerts(notify=False):
                                 if cve_match:
                                     cve_id = cve_match.group(1)
                                     
+                                resp_trigramme = asset['responsable'] if 'responsable' in asset.keys() and asset['responsable'] else ''
+                                resp_email = asset['email_responsable'] if 'email_responsable' in asset.keys() and asset['email_responsable'] else ''
+                                resp_str = f"{resp_trigramme} ({resp_email})" if (resp_trigramme and resp_email) else (resp_trigramme or None)
+
                                 send_teams_notification(
                                     webhook_url=teams_webhook_url,
                                     alert_title=a['title'],
@@ -2108,7 +2118,8 @@ def refresh_alerts(notify=False):
                                     cve_id=cve_id,
                                     cvss_score=cvss_score,
                                     priority=priority,
-                                    pub_date=a['pub_date']
+                                    pub_date=a['pub_date'],
+                                    responsable=resp_str
                                 )
                 
     conn.commit()
