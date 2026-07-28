@@ -528,7 +528,7 @@ def fetch_opencve_feed(url):
             req.add_header('Authorization', f'Basic {auth_b64}')
         req.add_header('User-Agent', 'herakles-it-tracker/1.0')
         req.add_header('Accept', 'application/json')
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=20) as response:
             return response.read()
 
     # Toujours combiner l'appel direct et la recherche de fallback
@@ -549,17 +549,30 @@ def fetch_opencve_feed(url):
     except Exception as e:
         print(f"Erreur d'appel direct OpenCVE ({api_url}) : {e}")
 
-    # 2. Recherche complémentaire par mot-clé
-    search_terms = []
-    if vendor and len(vendor) >= 3:
-        search_terms.append(vendor)
-        clean_v = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', vendor.lower())
-        if clean_v != vendor.lower() and len(clean_v) >= 3:
-            search_terms.append(clean_v)
+    # 2. Recherche complémentaire par mot-clé avec nettoyage des caractères d'échappement et extensions
+    def clean_search_term(t):
+        if not t:
+            return ""
+        c = re.sub(r'[\!\\\'\"]', '', t)
+        c = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', c, flags=re.IGNORECASE)
+        return c.strip()
+
+    raw_terms = []
+    if vendor:
+        raw_terms.append(vendor)
+        raw_terms.append(clean_search_term(vendor))
     if product:
-        p_parts = [p for p in re.split(r'[-_ ]', product) if p]
-        if p_parts and len(p_parts[0]) >= 3:
-            search_terms.append(p_parts[0])
+        p_clean = clean_search_term(product)
+        raw_terms.append(p_clean)
+        for part in re.split(r'[-_ ]', p_clean):
+            if part.lower() not in ('page', 'builder', 'framework', 'system', 'plugin', 'module', 'core', 'light', 'update') and len(part) >= 3:
+                raw_terms.append(part)
+                
+    search_terms = []
+    for term in raw_terms:
+        ct = clean_search_term(term)
+        if ct and len(ct) >= 3 and ct not in search_terms:
+            search_terms.append(ct)
             
     for term in search_terms:
         try:
@@ -613,7 +626,7 @@ def fetch_opencve_feed(url):
                 continue
         pre_candidates.append((cve_id, cve_sum))
         
-    candidates_items = pre_candidates[:20]
+    candidates_items = pre_candidates[:10]
     
     def process_candidate(cve_item):
         cve_id, cve_sum = cve_item
@@ -675,6 +688,7 @@ def fetch_opencve_feed(url):
             return cve_sum
         return None
 
+    filtered_results = []
     if candidates_items:
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(process_candidate, item) for item in candidates_items]
