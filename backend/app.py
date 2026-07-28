@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import sqlite3
 import os
 import urllib.request
@@ -601,10 +602,10 @@ def fetch_opencve_feed(url):
     # Limiter le nombre de candidats évalués pour éviter les timeouts
     candidates_items = list(candidates.items())[:10]
     
-    for cve_id, cve_sum in candidates_items:
-        # Optimisation : si la CVE est déjà connue (présente dans le titre d'une alerte existante), on passe
+    def process_candidate(cve_item):
+        cve_id, cve_sum = cve_item
         if any(cve_id in t for t in existing_titles):
-            continue
+            return None
             
         try:
             detail_url = f"{opencve_url}/api/cve/{cve_id}"
@@ -612,7 +613,7 @@ def fetch_opencve_feed(url):
             cve_detail = json.loads(detail_data_bytes)
         except Exception as e_detail:
             print(f"Erreur de récupération détails pour {cve_id} (fallback): {e_detail}")
-            continue
+            return None
             
         raw_nvd = cve_detail.get('raw_nvd_data') or {}
         affected_list = raw_nvd.get('affected') or []
@@ -660,9 +661,20 @@ def fetch_opencve_feed(url):
                     break
                     
         if matched:
-            # On conserve le detail de la CVE dans l'objet pour éviter un second fetch en dessous
             cve_sum['_cached_detail'] = cve_detail
-            filtered_results.append(cve_sum)
+            return cve_sum
+        return None
+
+    if candidates_items:
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(process_candidate, item) for item in candidates_items]
+            for f in as_completed(futures):
+                try:
+                    res = f.result()
+                    if res:
+                        filtered_results.append(res)
+                except Exception as e_cand:
+                    print(f"Erreur évaluation candidat OpenCVE: {e_cand}")
 
     # Récupérer les détails et construire la liste d'alertes finale
     items = []
@@ -1823,6 +1835,141 @@ def resolve_asset_alerts(asset_id):
         'updated_version': new_version
     })
 
+def fetch_feed_for_asset_url(asset_dict, url, is_primary):
+    triggered_alerts = []
+    xml_data = None
+    version_actuelle = asset_dict['version_actuelle']
+
+    if url.lower().startswith('opencve://'):
+        is_joomla = False
+    else:
+        try:
+            clean_url = validate_and_clean_url(url)
+            if not clean_url:
+                print(f"URL de flux RSS bloquée pour des raisons de sécurité : {url}")
+                return url, []
+                
+            req = urllib.request.Request(
+                clean_url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
+            )
+            with urllib.request.urlopen(req, timeout=4) as response:
+                xml_data = response.read()
+        except Exception as e:
+            print(f"Erreur de récupération de l'URL ({url}): {e}")
+            return url, []
+
+        is_joomla = url.split('?')[0].lower().endswith('.xml')
+        root = None
+        if not is_joomla:
+            try:
+                root = ET.fromstring(xml_data)
+                root_tag = root.tag.split('}')[-1]
+                if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
+                    is_joomla = True
+            except Exception:
+                pass
+
+    if is_joomla:
+        if root is None:
+            try:
+                root = ET.fromstring(xml_data)
+            except Exception as e:
+                print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
+                return None, []
+
+        updates_list = []
+        if root.tag.split('}')[-1] == 'update':
+            updates_list.append(root)
+        else:
+            def find_all_updates(elem):
+                res = []
+                tag = elem.tag.split('}')[-1]
+                if tag == 'update':
+                    res.append(elem)
+                else:
+                    for child in elem:
+                        res.extend(find_all_updates(child))
+                return res
+            updates_list = find_all_updates(root)
+
+        best_update = None
+        best_version_obj = None
+
+        for upd in updates_list:
+            ver_str = None
+            for child in upd:
+                if child.tag.split('}')[-1] == 'version' and child.text:
+                    ver_str = child.text.strip()
+                    break
+            if ver_str:
+                ver_obj = parse_version_safe(ver_str)
+                if ver_obj:
+                    if best_version_obj is None or ver_obj > best_version_obj:
+                        best_version_obj = ver_obj
+                        best_update = (ver_str, upd)
+
+        if best_update:
+            xml_version, upd_elem = best_update
+            xml_ver = best_version_obj
+            asset_ver = parse_version_safe(version_actuelle)
+
+            if xml_ver and asset_ver and xml_ver > asset_ver:
+                title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
+                
+                xml_infourl = None
+                for child in upd_elem:
+                    if child.tag.split('}')[-1] == 'infourl' and child.text:
+                        xml_infourl = child.text.strip()
+                        break
+                        
+                link = xml_infourl if xml_infourl else url
+                pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                triggered_alert_for_url = {
+                    'title': title,
+                    'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset_dict['nom_produit']}.",
+                    'link': link,
+                    'pub_date': pub_date,
+                    'trigger_url': url,
+                    'is_secondary': 0 if is_primary else 1
+                }
+                triggered_alerts.append(triggered_alert_for_url)
+
+    else:
+        # RSS Feed
+        feed_items = fetch_rss_feed(url, xml_data=xml_data)
+        if feed_items is not None:
+            for item in feed_items:
+                title = item['title']
+                desc = item.get('description', '')
+                link = item['link']
+                pub_date = item['pub_date']
+                extracted_ver = item.get('extracted_version')
+                
+                if extracted_ver and extracted_ver.lower() not in title.lower():
+                    title = f"{title} ({extracted_ver})"
+                    
+                temp_alert = {
+                    'title': title,
+                    'description': desc,
+                    'version_actuelle': version_actuelle,
+                    'extracted_version': extracted_ver
+                }
+                status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                
+                if status != 'hide':
+                    triggered_alerts.append({
+                        'title': title,
+                        'description': desc,
+                        'link': link,
+                        'pub_date': pub_date,
+                        'trigger_url': url,
+                        'is_secondary': 0 if is_primary else 1
+                    })
+
+    return None, triggered_alerts
+
 @app.route('/api/alerts/refresh', methods=['POST'])
 def refresh_alerts(notify=False):
     conn = get_db_connection()
@@ -1842,285 +1989,173 @@ def refresh_alerts(notify=False):
         LEFT JOIN team t ON a.responsable = t.trigramme;
     """).fetchall()
     
+    tasks = []
+    for asset in assets:
+        asset_dict = dict(asset)
+        asset_id = asset_dict['id']
+        urls_rows = conn.execute("SELECT url, is_primary FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;", (asset_id,)).fetchall()
+        for u_row in urls_rows:
+            tasks.append((asset_dict, u_row['url'], u_row['is_primary']))
+            
     unreachable_urls = []
     new_alerts_count = 0
+    results = []
     
-    for asset in assets:
+    if tasks:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_task = {
+                executor.submit(fetch_feed_for_asset_url, asset_dict, url, is_primary): (asset_dict, url, is_primary)
+                for asset_dict, url, is_primary in tasks
+            }
+            for future in as_completed(future_to_task):
+                asset_dict, url, is_primary = future_to_task[future]
+                try:
+                    unreach, triggered = future.result()
+                    if unreach:
+                        unreachable_urls.append(unreach)
+                    results.append({
+                        'asset': asset_dict,
+                        'url': url,
+                        'is_primary': is_primary,
+                        'triggered_alerts': triggered
+                    })
+                except Exception as e:
+                    print(f"Erreur lors de l'exécution parallèle du flux ({url}): {e}")
+                    unreachable_urls.append(url)
+
+    for res_item in results:
+        asset = res_item['asset']
         asset_id = asset['id']
         version_actuelle = asset['version_actuelle']
+        url = res_item['url']
+        is_primary = res_item['is_primary']
+        triggered_alerts = res_item['triggered_alerts']
+
+        # Gérer la résolution automatique des alertes obsolètes et le maintien des alertes encore vulnérables
+        existing_active = conn.execute("""
+            SELECT id, title, description FROM alerts
+            WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
+        """, (asset_id, url)).fetchall()
         
-        # Récupérer les URLs configurées pour cet actif
-        urls_rows = conn.execute("SELECT url, is_primary FROM asset_urls WHERE asset_id = ? ORDER BY is_primary DESC, id ASC;", (asset_id,)).fetchall()
+        active_titles = {a['title'] for a in triggered_alerts}
         
-        if not urls_rows:
-            continue
+        for ea in existing_active:
+            if ea['title'] not in active_titles:
+                ea_title = ea['title']
+                ea_extracted_ver = None
+                if '(' in ea_title and ea_title.endswith(')'):
+                    ver_part = ea_title.split('(')[-1][:-1]
+                    if ver_part.lower().startswith('v'):
+                        ver_part = ver_part[1:]
+                    ea_extracted_ver = ver_part
+                
+                temp_alert = {
+                    'title': ea['title'],
+                    'description': ea['description'],
+                    'version_actuelle': version_actuelle,
+                    'extracted_version': ea_extracted_ver
+                }
+                status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                if status == 'hide':
+                    conn.execute("""
+                        UPDATE alerts 
+                        SET resolved = 1, resolved_at_version = ?
+                        WHERE id = ?;
+                    """, (version_actuelle, ea['id']))
+        
+        for a in triggered_alerts:
+            existing = conn.execute("""
+                SELECT id FROM alerts 
+                WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 0;
+            """, (asset_id, url, a['title'])).fetchone()
             
-        for u_row in urls_rows:
-            url = u_row['url']
-            is_primary = u_row['is_primary']
-            triggered_alerts = []
-            xml_data = None
-            
-            if url.lower().startswith('opencve://'):
-                is_joomla = False
+            if existing:
+                conn.execute("""
+                    UPDATE alerts 
+                    SET description = ?, link = ?, pub_date = ?, is_secondary = ?
+                    WHERE id = ?;
+                """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing['id']))
             else:
-                try:
-                    clean_url = validate_and_clean_url(url)
-                    if not clean_url:
-                        print(f"URL de flux RSS bloquée pour des raisons de sécurité : {url}")
-                        unreachable_urls.append(url)
-                        continue
-                        
-                    req = urllib.request.Request(
-                        clean_url, 
-                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) herakles-it-tracker/1.0'}
-                    )
-                    with urllib.request.urlopen(req, timeout=4) as response:
-                        xml_data = response.read()
-                except Exception as e:
-                    print(f"Erreur de récupération de l'URL ({url}): {e}")
-                    unreachable_urls.append(url)
-                    continue
-
-                # Détection du format : soit URL se termine par .xml, soit le contenu XML contient updates/update
-                is_joomla = url.split('?')[0].lower().endswith('.xml')
-                root = None
-                if not is_joomla:
-                    try:
-                        root = ET.fromstring(xml_data)
-                        root_tag = root.tag.split('}')[-1]
-                        if root_tag in ('updates', 'update') or root.find('.//updates') is not None or root.find('.//update') is not None:
-                            is_joomla = True
-                    except Exception:
-                        pass
-
-            if is_joomla:
-                if root is None:
-                    try:
-                        root = ET.fromstring(xml_data)
-                    except Exception as e:
-                        print(f"Erreur lors du parsing du fichier XML Joomla ({url}): {e}")
-                        continue
-
-                # Support de plusieurs éléments <update> dans les fichiers XML Joomla
-                # On extrait toutes les balises <update> et on cherche la version la plus élevée.
-                updates_list = []
-                if root.tag.split('}')[-1] == 'update':
-                    updates_list.append(root)
+                existing_resolved = conn.execute("""
+                    SELECT id, resolved_at_version FROM alerts 
+                    WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
+                """, (asset_id, url, a['title'])).fetchone()
+                
+                is_new_alert = False
+                if existing_resolved:
+                    resolved_at_ver = existing_resolved['resolved_at_version']
+                    if resolved_at_ver is not None and resolved_at_ver != version_actuelle:
+                        conn.execute("""
+                            UPDATE alerts 
+                            SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
+                            WHERE id = ?;
+                        """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
+                        is_new_alert = True
+                    elif resolved_at_ver is None:
+                        conn.execute("""
+                            UPDATE alerts 
+                            SET resolved_at_version = ?
+                            WHERE id = ?;
+                        """, (version_actuelle, existing_resolved['id']))
                 else:
-                    def find_all_updates(elem):
-                        res = []
-                        tag = elem.tag.split('}')[-1]
-                        if tag == 'update':
-                            res.append(elem)
-                        else:
-                            for child in elem:
-                                res.extend(find_all_updates(child))
-                        return res
-                    updates_list = find_all_updates(root)
-
-                best_update = None
-                best_version_obj = None
-
-                for upd in updates_list:
-                    ver_str = None
-                    for child in upd:
-                        if child.tag.split('}')[-1] == 'version' and child.text:
-                            ver_str = child.text.strip()
-                            break
-                    if ver_str:
-                        ver_obj = parse_version_safe(ver_str)
-                        if ver_obj:
-                            if best_version_obj is None or ver_obj > best_version_obj:
-                                best_version_obj = ver_obj
-                                best_update = (ver_str, upd)
-
-                if best_update:
-                    xml_version, upd_elem = best_update
-                    xml_ver = best_version_obj
-                    asset_ver = parse_version_safe(version_actuelle)
-
-                    if xml_ver and asset_ver and xml_ver > asset_ver:
-                        title = f"Mise à jour disponible : Version {xml_version} disponible (Actuellement en {version_actuelle})"
-                        
-                        # Extraction de infourl dans upd_elem
-                        xml_infourl = None
-                        for child in upd_elem:
-                            if child.tag.split('}')[-1] == 'infourl' and child.text:
-                                xml_infourl = child.text.strip()
-                                break
-                                
-                        link = xml_infourl if xml_infourl else url
-                        pub_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-                        triggered_alert_for_url = {
-                            'title': title,
-                            'description': f"Une nouvelle version {xml_version} est disponible pour l'actif {asset['nom_produit']}.",
-                            'link': link,
-                            'pub_date': pub_date,
-                            'trigger_url': url,
-                            'is_secondary': 0 if is_primary else 1
-                        }
-                        triggered_alerts.append(triggered_alert_for_url)
-
-            else:
-                # RSS Feed
-                feed_items = fetch_rss_feed(url, xml_data=xml_data)
-                if feed_items is not None:
-                    for item in feed_items:
-                        title = item['title']
-                        desc = item.get('description', '')
-                        link = item['link']
-                        pub_date = item['pub_date']
-                        extracted_ver = item.get('extracted_version')
-                        
-                        # Si on a extrait une version et qu'elle n'est pas dans le titre, on l'ajoute pour la clarté
-                        if extracted_ver and extracted_ver.lower() not in title.lower():
-                            title = f"{title} ({extracted_ver})"
-                            
-                        temp_alert = {
-                            'title': title,
-                            'description': desc,
-                            'version_actuelle': version_actuelle,
-                            'extracted_version': extracted_ver
-                        }
-                        status, priority, status_text, affected_versions = analyze_alert(temp_alert)
-                        
-                        if status != 'hide':
-                            triggered_alerts.append({
-                                'title': title,
-                                'description': desc,
-                                'link': link,
-                                'pub_date': pub_date,
-                                'trigger_url': url,
-                                'is_secondary': 0 if is_primary else 1
-                            })
-
-            # Gérer la résolution automatique des alertes obsolètes et le maintien des alertes encore vulnérables
-            existing_active = conn.execute("""
-                SELECT id, title, description FROM alerts
-                WHERE asset_id = ? AND trigger_url = ? AND resolved = 0;
-            """, (asset_id, url)).fetchall()
-            
-            active_titles = {a['title'] for a in triggered_alerts}
-            
-            for ea in existing_active:
-                if ea['title'] not in active_titles:
-                    ea_title = ea['title']
-                    ea_extracted_ver = None
-                    if '(' in ea_title and ea_title.endswith(')'):
-                        ver_part = ea_title.split('(')[-1][:-1]
-                        if ver_part.lower().startswith('v'):
-                            ver_part = ver_part[1:]
-                        ea_extracted_ver = ver_part
+                    conn.execute("""
+                        INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
+                        VALUES (?, ?, ?, ?, ?, 0, ?, ?);
+                    """, (asset_id, a['title'], a['description'], a['link'], a['pub_date'], url, a['is_secondary']))
+                    new_alerts_count += 1
+                    is_new_alert = True
                     
+                if is_new_alert and notify and notify_enabled and teams_webhook_url:
+                    # Analyser la criticité
                     temp_alert = {
-                        'title': ea['title'],
-                        'description': ea['description'],
+                        'title': a['title'],
+                        'description': a['description'],
                         'version_actuelle': version_actuelle,
-                        'extracted_version': ea_extracted_ver
+                        'extracted_version': None
                     }
                     status, priority, status_text, affected_versions = analyze_alert(temp_alert)
-                    if status == 'hide':
-                        conn.execute("""
-                            UPDATE alerts 
-                            SET resolved = 1, resolved_at_version = ?
-                            WHERE id = ?;
-                        """, (version_actuelle, ea['id']))
-            
-            for a in triggered_alerts:
-                    existing = conn.execute("""
-                        SELECT id FROM alerts 
-                        WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 0;
-                    """, (asset_id, url, a['title'])).fetchone()
                     
-                    if existing:
-                        conn.execute("""
-                            UPDATE alerts 
-                            SET description = ?, link = ?, pub_date = ?, is_secondary = ?
-                            WHERE id = ?;
-                        """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing['id']))
+                    # Vérifier si c'est une CVE et extraire le score CVSS
+                    cvss_score = None
+                    cvss_match = re.search(r'\[CVE / CVSS:\s*(\d+(?:\.\d+)?)\]', a['title'])
+                    if cvss_match:
+                        cvss_score = float(cvss_match.group(1))
+                    
+                    is_cve = bool(re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title']))
+                    
+                    should_notify = False
+                    if cvss_score is not None:
+                        if cvss_score >= notification_min_cvss:
+                            should_notify = True
                     else:
-                        existing_resolved = conn.execute("""
-                            SELECT id, resolved_at_version FROM alerts 
-                            WHERE asset_id = ? AND trigger_url = ? AND title = ? AND resolved = 1;
-                        """, (asset_id, url, a['title'])).fetchone()
-                        
-                        is_new_alert = False
-                        if existing_resolved:
-                            resolved_at_ver = existing_resolved['resolved_at_version']
-                            if resolved_at_ver is not None and resolved_at_ver != version_actuelle:
-                                conn.execute("""
-                                    UPDATE alerts 
-                                    SET resolved = 0, description = ?, link = ?, pub_date = ?, is_secondary = ?
-                                    WHERE id = ?;
-                                """, (a['description'], a['link'], a['pub_date'], a['is_secondary'], existing_resolved['id']))
-                                is_new_alert = True
-                            elif resolved_at_ver is None:
-                                conn.execute("""
-                                    UPDATE alerts 
-                                    SET resolved_at_version = ?
-                                    WHERE id = ?;
-                                """, (version_actuelle, existing_resolved['id']))
-                        else:
-                            conn.execute("""
-                                INSERT INTO alerts (asset_id, title, description, link, pub_date, resolved, trigger_url, is_secondary)
-                                VALUES (?, ?, ?, ?, ?, 0, ?, ?);
-                            """, (asset_id, a['title'], a['description'], a['link'], a['pub_date'], url, a['is_secondary']))
-                            new_alerts_count += 1
-                            is_new_alert = True
+                        if is_cve:
+                            should_notify = True
+                        elif priority in ('critical', 'high'):
+                            should_notify = True
                             
-                        if is_new_alert and notify and notify_enabled and teams_webhook_url:
-                            # Analyser la criticité
-                            temp_alert = {
-                                'title': a['title'],
-                                'description': a['description'],
-                                'version_actuelle': version_actuelle,
-                                'extracted_version': None
-                            }
-                            status, priority, status_text, affected_versions = analyze_alert(temp_alert)
+                    if should_notify:
+                        cve_id = None
+                        cve_match = re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title'])
+                        if cve_match:
+                            cve_id = cve_match.group(1)
                             
-                            # Vérifier si c'est une CVE et extraire le score CVSS
-                            cvss_score = None
-                            cvss_match = re.search(r'\[CVE / CVSS:\s*(\d+(?:\.\d+)?)\]', a['title'])
-                            if cvss_match:
-                                cvss_score = float(cvss_match.group(1))
-                            
-                            is_cve = bool(re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title']))
-                            
-                            should_notify = False
-                            if cvss_score is not None:
-                                if cvss_score >= notification_min_cvss:
-                                    should_notify = True
-                            else:
-                                if is_cve:
-                                    should_notify = True
-                                elif priority in ('critical', 'high'):
-                                    should_notify = True
-                                    
-                            if should_notify:
-                                cve_id = None
-                                cve_match = re.search(r'\b(CVE-\d{4}-\d{4,})\b', a['title'])
-                                if cve_match:
-                                    cve_id = cve_match.group(1)
-                                    
-                                resp_trigramme = asset['responsable'] if 'responsable' in asset.keys() and asset['responsable'] else ''
-                                resp_email = asset['email_responsable'] if 'email_responsable' in asset.keys() and asset['email_responsable'] else ''
-                                resp_str = f"{resp_trigramme} ({resp_email})" if (resp_trigramme and resp_email) else (resp_trigramme or None)
+                        resp_trigramme = asset['responsable'] if 'responsable' in asset.keys() and asset['responsable'] else ''
+                        resp_email = asset['email_responsable'] if 'email_responsable' in asset.keys() and asset['email_responsable'] else ''
+                        resp_str = f"{resp_trigramme} ({resp_email})" if (resp_trigramme and resp_email) else (resp_trigramme or None)
 
-                                send_teams_notification(
-                                    webhook_url=teams_webhook_url,
-                                    alert_title=a['title'],
-                                    alert_desc=a['description'],
-                                    alert_link=a['link'],
-                                    asset_name=asset['nom_produit'],
-                                    asset_version=version_actuelle,
-                                    cve_id=cve_id,
-                                    cvss_score=cvss_score,
-                                    priority=priority,
-                                    pub_date=a['pub_date'],
-                                    responsable=resp_str
-                                )
+                        send_teams_notification(
+                            webhook_url=teams_webhook_url,
+                            alert_title=a['title'],
+                            alert_desc=a['description'],
+                            alert_link=a['link'],
+                            asset_name=asset['nom_produit'],
+                            asset_version=version_actuelle,
+                            cve_id=cve_id,
+                            cvss_score=cvss_score,
+                            priority=priority,
+                            pub_date=a['pub_date'],
+                            responsable=resp_str
+                        )
                 
     conn.commit()
     
