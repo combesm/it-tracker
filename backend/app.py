@@ -528,7 +528,7 @@ def fetch_opencve_feed(url):
             req.add_header('Authorization', f'Basic {auth_b64}')
         req.add_header('User-Agent', 'herakles-it-tracker/1.0')
         req.add_header('Accept', 'application/json')
-        with urllib.request.urlopen(req, timeout=4) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             return response.read()
 
     # Toujours combiner l'appel direct et la recherche de fallback
@@ -553,6 +553,9 @@ def fetch_opencve_feed(url):
     search_terms = []
     if vendor and len(vendor) >= 3:
         search_terms.append(vendor)
+        clean_v = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', vendor.lower())
+        if clean_v != vendor.lower() and len(clean_v) >= 3:
+            search_terms.append(clean_v)
     if product:
         p_parts = [p for p in re.split(r'[-_ ]', product) if p]
         if p_parts and len(p_parts[0]) >= 3:
@@ -599,8 +602,8 @@ def fetch_opencve_feed(url):
     
     filtered_results = []
     
-    # Limiter le nombre de candidats évalués pour éviter les timeouts
-    candidates_items = list(candidates.items())[:10]
+    # Limiter le nombre de candidats évalués (jusqu'à 50 candidats grâce au multi-threading)
+    candidates_items = list(candidates.items())[:50]
     
     def process_candidate(cve_item):
         cve_id, cve_sum = cve_item
