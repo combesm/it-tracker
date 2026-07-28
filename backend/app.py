@@ -600,16 +600,23 @@ def fetch_opencve_feed(url):
     norm_vendor = normalize_name(vendor)
     norm_product = normalize_name(product)
     
-    filtered_results = []
-    
-    # Limiter le nombre de candidats évalués (jusqu'à 50 candidats grâce au multi-threading)
-    candidates_items = list(candidates.items())[:50]
+    # Pre-filtrage rapide en mémoire sur le résumé pour éliminer les fausses pistes avant les requêtes réseau
+    pre_candidates = []
+    for cve_id, cve_sum in candidates.items():
+        if any(cve_id in t for t in existing_titles):
+            continue
+        summary_raw = (cve_sum.get('summary') or '').lower()
+        if vendor:
+            v_low = vendor.lower()
+            clean_v = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', v_low)
+            if v_low not in summary_raw and (clean_v and clean_v not in summary_raw):
+                continue
+        pre_candidates.append((cve_id, cve_sum))
+        
+    candidates_items = pre_candidates[:20]
     
     def process_candidate(cve_item):
         cve_id, cve_sum = cve_item
-        if any(cve_id in t for t in existing_titles):
-            return None
-            
         try:
             detail_url = f"{opencve_url}/api/cve/{cve_id}"
             detail_data_bytes = perform_request(detail_url)
