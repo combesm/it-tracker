@@ -272,6 +272,41 @@ L'application permet d'exporter et d'importer l'intégralité de l'inventaire vi
 
 ---
 
+---
+
+## 🩺 Supervision & Maintenance (Uptime Kuma & OpenCVE)
+
+### 📊 Supervision des conteneurs Docker dans Uptime Kuma
+Pour être immédiatement averti si un conteneur (comme le planificateur `opencve-celery-beat`) s'arrête ou entre en boucle de redémarrage, Uptime Kuma est configuré avec un accès au socket Docker local (`/var/run/docker.sock`).
+
+#### Procédure d'ajout d'une sonde conteneur Docker dans Uptime Kuma :
+1. **Accéder à Uptime Kuma** : Ouvrez `http://<IP_DU_SERVEUR>:3002` (ou via Nginx sur le port 3001).
+2. **Déclarer le démon Docker (si non configuré)** :
+   - Cliquez sur votre profil > **Paramètres** > **Hôtes Docker** (*Docker Hosts*).
+   - Cliquez sur **Ajouter un hôte Docker** :
+     - **Nom d'affichage** : `Docker Local`
+     - **Type de connexion** : `Socket`
+     - **Chemin** : `/var/run/docker.sock`
+   - Cliquez sur **Tester** puis **Sauvegarder**.
+3. **Créer la sonde de surveillance pour un conteneur** :
+   - Cliquez sur **+ Ajouter un nouveau moniteur**.
+   - **Type de moniteur** : `Conteneur Docker`
+   - **Nom du moniteur** : `OpenCVE Celery Beat` (ou `Celery Worker`, `OpenCVE Web`, etc.)
+   - **Hôte Docker** : `Docker Local`
+   - **Nom du conteneur** : `opencve-celery-beat`
+   - **Intervalle** : `60` secondes.
+   - Enregistrez et associez un canal de notification (Email, Teams, Discord, Slack, etc.).
+
+### 🔧 Résolution du blocage de synchronisation OpenCVE (`celerybeat.pid`)
+- **Symptôme** : La base de CVE OpenCVE n'est plus mise à jour depuis plusieurs jours.
+- **Cause** : Suite à un crash ou arrêt brutal du serveur, Celery Beat conserve un fichier verrou `celerybeat.pid`. Au redémarrage, Celery Beat refuse d'exécuter l'application (`ERROR: Pidfile (celerybeat.pid) already exists`) et entre en boucle de crash/redémarrage.
+- **Solution appliquée** : Le fichier `docker-compose.opencve.yml` et `run.sh` nettoient automatiquement tout fichier `.pid` résiduel avant le lancement de Celery Beat :
+  ```yaml
+  entrypoint: ["/bin/sh", "-c", "rm -f /app/celerybeat.pid /tmp/celerybeat.pid && exec ./run.sh celery-beat"]
+  ```
+
+---
+
 ## 🛠️ Commandes utiles pour l'Exploitation
 
 *   **Démarrer/Reconstruire l'IT-Tracker** :
@@ -291,3 +326,4 @@ L'application permet d'exporter et d'importer l'intégralité de l'inventaire vi
     - **Console OpenCVE** : `http://<IP_DU_SERVEUR>/opencve/`
     - **Vigil365 (Sécurisé par authentification IT-Tracker)** : `http://<IP_DU_SERVEUR>/vigil/`
     - **Uptime Kuma** : `http://<IP_DU_SERVEUR>:3001/`
+

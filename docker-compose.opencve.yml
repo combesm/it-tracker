@@ -27,7 +27,7 @@ services:
     depends_on:
       - webserver
       - redis-opencve
-    command: celery-beat
+    entrypoint: ["/bin/sh", "-c", "rm -f /app/celerybeat.pid /tmp/celerybeat.pid && exec ./run.sh celery-beat"]
     volumes:
       - ./opencve_data/conf/opencve.cfg:/app/opencve.cfg:ro
     restart: unless-stopped

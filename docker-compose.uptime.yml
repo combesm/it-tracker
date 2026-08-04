@@ -6,6 +6,7 @@ services:
     container_name: uptime-kuma
     volumes:
       - ./uptime_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:3002:3001"
     restart: unless-stopped
