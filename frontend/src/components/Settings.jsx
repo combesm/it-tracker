@@ -10,7 +10,7 @@ export default function Settings({ backendUrl }) {
     last_refresh_time: '',
     cron_token: ''
   });
-  
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -233,15 +233,15 @@ export default function Settings({ backendUrl }) {
         const data = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
 
-        let teamSheetName = workbook.SheetNames.find(n => 
-          n.toLowerCase().includes('équipe') || 
-          n.toLowerCase().includes('equipe') || 
-          n.toLowerCase().includes('team') || 
+        let teamSheetName = workbook.SheetNames.find(n =>
+          n.toLowerCase().includes('équipe') ||
+          n.toLowerCase().includes('equipe') ||
+          n.toLowerCase().includes('team') ||
           n.toLowerCase().includes('membre')
         );
-        let assetsSheetName = workbook.SheetNames.find(n => 
-          n.toLowerCase().includes('actif') || 
-          n.toLowerCase().includes('asset') || 
+        let assetsSheetName = workbook.SheetNames.find(n =>
+          n.toLowerCase().includes('actif') ||
+          n.toLowerCase().includes('asset') ||
           n.toLowerCase().includes('service')
         );
 
@@ -326,7 +326,7 @@ export default function Settings({ backendUrl }) {
   };
 
   const absoluteCronUrl = `${window.location.protocol}//${window.location.host}${backendUrl}/api/alerts/cron_check?token=${settings.cron_token}`;
-  
+
   let cronSchedule = '*/30 * * * *';
   if (settings.refresh_interval_hours === '0') {
     if (cronTemplate === 'office') {
@@ -400,9 +400,8 @@ export default function Settings({ backendUrl }) {
       </div>
 
       {message && (
-        <div className={`p-4 rounded-lg text-sm font-semibold flex items-center transition-all ${
-          message.type === 'success' ? 'bg-brand-successBg text-brand-success' : 'bg-red-50 text-red-700 border border-red-200'
-        }`}>
+        <div className={`p-4 rounded-lg text-sm font-semibold flex items-center transition-all ${message.type === 'success' ? 'bg-brand-successBg text-brand-success' : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
           {message.type === 'success' ? (
             <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -605,7 +604,7 @@ export default function Settings({ backendUrl }) {
             </svg>
             Notifications Microsoft Teams
           </h2>
-          
+
           <form onSubmit={handleSave} className="space-y-6">
             {/* Activer/Désactiver */}
             <div className="flex items-center space-x-3">
@@ -731,10 +730,10 @@ export default function Settings({ backendUrl }) {
             </svg>
             Planification (Cron)
           </h2>
-          
+
           <div className="space-y-4 text-sm text-brand-text/80">
             <p>
-              Pour rendre la détection d'alertes autonome, configurez une tâche **Cron** sur votre serveur hôte.
+              Pour rendre la détection d'alertes autonome, configurez une tâche Cron sur votre serveur hôte.
             </p>
             <p>
               {settings.refresh_interval_hours === '0' ? (
@@ -743,7 +742,7 @@ export default function Settings({ backendUrl }) {
                 `La tâche Cron appellera l'application à intervalle régulier. Le système vérifiera automatiquement le temps écoulé et n'exécutera le rafraîchissement que si ${settings.refresh_interval_hours}h se sont écoulées.`
               )}
             </p>
-            
+
             {settings.refresh_interval_hours === '0' && (
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-brand-dark uppercase tracking-wider">
@@ -760,7 +759,7 @@ export default function Settings({ backendUrl }) {
                 </select>
               </div>
             )}
-            
+
             <div className="space-y-2 pt-2">
               <span className="block text-xs font-bold text-brand-dark uppercase tracking-wider">
                 Commande Cron Recommandée
