@@ -163,6 +163,27 @@ export default function Dashboard({ backendUrl }) {
     }
   };
 
+  const handleResolveSingleAlert = async (alertId, resolver) => {
+    try {
+      const res = await fetch(`${backendUrl}/api/alerts/resolve/${alertId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          resolved_by: resolver
+        })
+      });
+      if (res.ok) {
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
+        fetchStats();
+        fetchUpdateLogs();
+      } else {
+        alert('Erreur lors de la résolution de l\'alerte.');
+      }
+    } catch (err) {
+      console.error("Erreur de réseau lors de la résolution de l'alerte:", err);
+    }
+  };
+
   useEffect(() => {
     fetchStats();
     fetchAlerts();
@@ -566,6 +587,21 @@ export default function Dashboard({ backendUrl }) {
                                                 </>
                                               )}
                                             </div>
+                                          </div>
+                                          <div className="flex items-center space-x-2 shrink-0 self-start md:self-center">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleResolveSingleAlert(alert.id, asset.responsable);
+                                              }}
+                                              title="Résoudre uniquement cette alerte (faux positif / non concerné)"
+                                              className="px-2.5 py-1.5 bg-gray-50 hover:bg-green-50 hover:text-green-700 hover:border-green-300 text-brand-text/70 border border-brand-border rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer shadow-xs flex items-center gap-1.5"
+                                            >
+                                              <svg className="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
+                                              </svg>
+                                              <span>Ignorer cette alerte</span>
+                                            </button>
                                           </div>
                                         </div>
                                       ))}
