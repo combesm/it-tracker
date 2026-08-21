@@ -79,6 +79,7 @@ def init_db():
         is_secondary INTEGER DEFAULT 0,
         resolved_at_version TEXT,
         resolved_by TEXT,
+        resolved_at TEXT,
         FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
     );
     """)

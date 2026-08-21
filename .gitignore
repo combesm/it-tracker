@@ -17,4 +17,8 @@ node-env/
 uptime_data/
 vigil365/
 vigil_data/
+grafana_data/
+grafana_creds.txt
+prometheus_data/
+container_output.txt
 

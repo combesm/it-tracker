@@ -14,13 +14,19 @@ export default function History({ backendUrl }) {
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
+    if (typeof dateStr === 'string' && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(dateStr)) {
+      return dateStr;
+    }
     try {
       const d = new Date(dateStr);
-      return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
+      if (isNaN(d.getTime())) return dateStr;
+      const pad = (n) => String(n).padStart(2, '0');
+      const day = pad(d.getDate());
+      const month = pad(d.getMonth() + 1);
+      const year = d.getFullYear();
+      const hours = pad(d.getHours());
+      const minutes = pad(d.getMinutes());
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
     } catch {
       return dateStr;
     }
@@ -79,13 +85,16 @@ export default function History({ backendUrl }) {
       if (resAlerts.ok) {
         const alertsData = await resAlerts.json();
         const cveAlerts = alertsData.filter(a => isSecurityAlert(a));
-        alertsList = cveAlerts.map(a => ({
-          ...a,
-          uniqueKey: `cve-${a.id}`,
-          itemType: 'cve',
-          dateDisplay: formatDate(a.pub_date),
-          sortTime: parseTimestamp(a.pub_date)
-        }));
+        alertsList = cveAlerts.map(a => {
+          const dateVal = a.resolved_at || a.pub_date;
+          return {
+            ...a,
+            uniqueKey: `cve-${a.id}`,
+            itemType: 'cve',
+            dateDisplay: formatDate(dateVal),
+            sortTime: parseTimestamp(dateVal)
+          };
+        });
       }
 
       // Fusion et tri STRICTEMENT chronologique (du plus récent au plus ancien)

@@ -1745,7 +1745,8 @@ def resolve_alert(alert_id):
     if not resolved_by and asset_row:
         resolved_by = asset_row['responsable']
 
-    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ? WHERE id = ?;", (version_actuelle, resolved_by, alert_id))
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ?, resolved_at = ? WHERE id = ?;", (version_actuelle, resolved_by, now_str, alert_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1768,7 +1769,7 @@ def get_resolved_alerts():
 @app.route('/api/alerts/reactivate/<int:alert_id>', methods=['POST'])
 def reactivate_alert(alert_id):
     conn = get_db_connection()
-    conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL WHERE id = ?;", (alert_id,))
+    conn.execute("UPDATE alerts SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL, resolved_at = NULL WHERE id = ?;", (alert_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -1858,7 +1859,8 @@ def resolve_asset_alerts(asset_id):
     updated_asset = conn.execute("SELECT version_actuelle FROM assets WHERE id = ?;", (asset_id,)).fetchone()
     updated_ver = updated_asset['version_actuelle'] if updated_asset else None
     
-    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, resolved_by, asset_id))
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+    conn.execute("UPDATE alerts SET resolved = 1, resolved_at_version = ?, resolved_by = ?, resolved_at = ? WHERE asset_id = ? AND resolved = 0;", (updated_ver, resolved_by, now_str, asset_id))
     conn.commit()
     conn.close()
     
@@ -2089,11 +2091,12 @@ def refresh_alerts(notify=False):
                 }
                 status, priority, status_text, affected_versions = analyze_alert(temp_alert)
                 if status == 'hide':
+                    now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
                     conn.execute("""
                         UPDATE alerts 
-                        SET resolved = 1, resolved_at_version = ?
+                        SET resolved = 1, resolved_at_version = ?, resolved_at = ?
                         WHERE id = ?;
-                    """, (version_actuelle, ea['id']))
+                    """, (version_actuelle, now_str, ea['id']))
         
         for a in triggered_alerts:
             existing = conn.execute("""
@@ -2304,7 +2307,7 @@ def revert_update_log(log_id):
     # 2. Réactiver les alertes qui avaient été résolues à cette nouvelle version
     conn.execute("""
         UPDATE alerts 
-        SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL 
+        SET resolved = 0, resolved_at_version = NULL, resolved_by = NULL, resolved_at = NULL 
         WHERE asset_id = ? AND resolved_at_version = ?;
     """, (asset_id, nouvelle_version))
     
@@ -2386,6 +2389,11 @@ if __name__ == '__main__':
 
         try:
             conn.execute("ALTER TABLE alerts ADD COLUMN resolved_by TEXT;")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            conn.execute("ALTER TABLE alerts ADD COLUMN resolved_at TEXT;")
         except sqlite3.OperationalError:
             pass
 

@@ -118,13 +118,19 @@ export default function Settings({ backendUrl }) {
 
       const formatDateStr = (dateStr) => {
         if (!dateStr) return 'N/A';
+        if (typeof dateStr === 'string' && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/.test(dateStr)) {
+          return dateStr;
+        }
         try {
           const d = new Date(dateStr);
-          return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          });
+          if (isNaN(d.getTime())) return dateStr;
+          const pad = (n) => String(n).padStart(2, '0');
+          const day = pad(d.getDate());
+          const month = pad(d.getMonth() + 1);
+          const year = d.getFullYear();
+          const hours = pad(d.getHours());
+          const minutes = pad(d.getMinutes());
+          return `${day}/${month}/${year} ${hours}:${minutes}`;
         } catch {
           return dateStr;
         }
@@ -163,14 +169,17 @@ export default function Settings({ backendUrl }) {
       // Alertes / CVEs résolues
       const formattedCveLogs = alertsDataRaw
         .filter(a => isSecurityAlert(a))
-        .map(a => ({
-          "Type d'événement": "CVE",
-          "Date & Heure": formatDateStr(a.pub_date),
-          "Actif": a.nom_produit || '',
-          "Détails de l'événement": `${a.title || ''} (Résolu en v${a.resolved_at_version || 'N/A'})`,
-          "Résolveur": a.resolved_by || a.responsable || 'N/A',
-          sortTime: parseTs(a.pub_date)
-        }));
+        .map(a => {
+          const dateVal = a.resolved_at || a.pub_date;
+          return {
+            "Type d'événement": "CVE",
+            "Date & Heure": formatDateStr(dateVal),
+            "Actif": a.nom_produit || '',
+            "Détails de l'événement": `${a.title || ''} (Résolu en v${a.resolved_at_version || 'N/A'})`,
+            "Résolveur": a.resolved_by || a.responsable || 'N/A',
+            sortTime: parseTs(dateVal)
+          };
+        });
 
       // Combiner et trier chronologiquement
       const allLogsFormatted = [...formattedUpdateLogs, ...formattedCveLogs];
