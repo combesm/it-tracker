@@ -591,29 +591,33 @@ def fetch_opencve_feed(url):
         except Exception as e_search:
             print(f"Erreur de recherche complémentaire pour {term}: {e_search}")
 
-    # Helper de normalisation de chaîne pour tolérer les variations mineures (suffixes client, project, cms, .com, etc.)
+    # Helper de normalisation de chaîne pour tolérer les variations mineures dans les fiches NVD/OpenCVE
+    # (extensions de domaine, séparateurs _, -, et mots-clés génériques comme client, server, project, cms, etc.)
     def normalize_name(name):
         if not name:
             return ""
         n = name.lower()
-        # Supprimer les extensions de domaine (.fr, .org, .com etc)
+        # 1. Supprimer les extensions de domaine web courantes (.fr, .org, .com etc.)
         n = re.sub(r'\.(com|org|net|fr|io|edu|gov|co|info|biz|us|de|uk|eu)\b', '', n)
-        # Supprimer les suffixes / mots clés génériques
+        # 2. Remplacer les séparateurs (_, -, .) par des espaces pour que \b délimite bien chaque mot-clé
+        #    (Permet d'harmoniser par ex. "rustdesk_server" et "RustDesk Server Pro" vers le mot-clé commun "rustdesk")
+        n = re.sub(r'[-_.]', ' ', n)
+        # 3. Supprimer les suffixes / mots-clés génériques fréquents dans les dépôts et extensions
         n = re.sub(r'\b(client|server|project|cms|extension|plugin|theme|module|software|app|application|framework)\b', '', n)
-        # Remplacer les caractères non-alphanumériques par du vide
+        # 4. Remplacer les caractères restants non-alphanumériques pour obtenir une clé d'appariement robuste
         n = re.sub(r'[^a-z0-9]', '', n)
         return n
 
-    # Récupérer les alertes existantes pour ce flux afin d'éviter les doubles fetches
+    # Récupérer les alertes déjà existantes pour ce flux afin d'éviter les requêtes API redondantes
     conn = get_db_connection()
     existing_titles = [row['title'] for row in conn.execute("SELECT title FROM alerts WHERE trigger_url = ?;", (url,)).fetchall()]
     conn.close()
 
-    # Filtrer les candidats
+    # Noms de référence normalisés pour la comparaison
     norm_vendor = normalize_name(vendor)
     norm_product = normalize_name(product)
     
-    # Pre-filtrage rapide en mémoire sur le résumé pour éliminer les fausses pistes avant les requêtes réseau
+    # Pré-filtrage rapide en mémoire sur le résumé pour éliminer les fausses pistes avant les requêtes réseau détaillées
     pre_candidates = []
     for cve_id, cve_sum in candidates.items():
         if any(cve_id in t for t in existing_titles):
@@ -642,11 +646,12 @@ def fetch_opencve_feed(url):
         affected_list = raw_nvd.get('affected') or []
         matched = False
         
-        # Distinction Client/Serveur pour le résumé ou les métadonnées
+        # Règle de distinction Client vs Serveur :
+        # Évite qu'une CVE ciblant un client lourd/mobile ne déclenche de faux positifs sur un serveur hébergé, et inversement
         is_server_query = "server" in (vendor or "").lower() or "server" in (product or "").lower()
         
         if not affected_list:
-            # Si pas de liste d'affected, on cherche dans le résumé
+            # Fallback : si la fiche NVD n'a pas de bloc 'affected' explicite, analyse textuelle du résumé
             summary = cve_sum.get('summary') or ''
             is_server_nvd = "server" in summary.lower()
             if is_server_query == is_server_nvd:
@@ -657,6 +662,7 @@ def fetch_opencve_feed(url):
                     if vendor and vendor.lower() in summary.lower():
                         matched = True
         else:
+            # Analyse des données structurées NVD (affectedData)
             for aff in affected_list:
                 aff_data = aff.get('affectedData') or []
                 for data_item in aff_data:
@@ -665,6 +671,7 @@ def fetch_opencve_feed(url):
                     if not v_val or not p_val:
                         continue
                         
+                    # Vérification de cohérence Client/Serveur sur le package/produit NVD
                     is_server_nvd = "server" in v_val.lower() or "server" in p_val.lower()
                     if is_server_query != is_server_nvd:
                         continue
@@ -672,6 +679,7 @@ def fetch_opencve_feed(url):
                     norm_v_val = normalize_name(v_val)
                     norm_p_val = normalize_name(p_val)
                     
+                    # Correspondance croisée tolérante des noms de package/produit normalisés
                     if product:
                         if (norm_vendor in norm_v_val or norm_v_val in norm_vendor) and (norm_product in norm_p_val or norm_p_val in norm_product):
                             matched = True
